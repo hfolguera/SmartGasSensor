@@ -1,7 +1,6 @@
 name: Test, build and publish
 on:
   push:
-    branches-ignore: [gitops]
   pull_request:
   workflow_dispatch:
 permissions:
@@ -26,9 +25,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    outputs:
-      image: ${{ steps.image.outputs.name }}
-      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
       - name: Image name
@@ -60,25 +56,3 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: mode=min
           sbom: true
-  gitops:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    needs: image
-    runs-on: ubuntu-latest
-    concurrency:
-      group: smartgas-gitops
-      cancel-in-progress: false
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: pip install PyYAML==6.0.3
-      - name: Promote immutable image digest for ArgoCD
-        env:
-          IMAGE_NAME: ${{ needs.image.outputs.image }}
-          IMAGE_DIGEST: ${{ needs.image.outputs.digest }}
-        run: bash scripts/update_gitops.sh

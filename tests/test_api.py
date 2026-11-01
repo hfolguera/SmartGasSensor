@@ -119,3 +119,42 @@ def test_prototype_two_point_calibration(settings, sample_dict, distance, percen
         assert body['volume_liters'] == liters
         assert body['calibration_clamped'] is clamped
         assert body['calibration_mode'] == 'two_point_prototype'
+
+
+def test_prometheus_metrics_export_real_values_and_freshness(settings, sample):
+    with TestClient(create_app(settings)) as client:
+        client.app.state.store.insert(sample, 'topic', time.time() - 4000)
+        response = client.get('/metrics')
+        assert response.status_code == 200
+        assert response.headers['content-type'] == 'text/plain; version=0.0.4; charset=utf-8'
+        text = response.text
+        assert 'smartgas_device_fill_percent{device_id="NodeMCU_ESP32"} 60\n' in text
+        assert 'smartgas_device_volume_liters{device_id="NodeMCU_ESP32"} 600\n' in text
+        assert 'smartgas_device_distance_meters{device_id="NodeMCU_ESP32"} 0.45\n' in text
+        assert 'smartgas_device_stale{device_id="NodeMCU_ESP32"} 1\n' in text
+        assert 'smartgas_device_battery_volts{' not in text
+        assert '# TYPE smartgas_received_total counter\n' in text
+        assert 'smartgas_notifications{state="pending"} 0\n' in text
+        assert text.endswith('\n')
+        assert client.get('/api/v1/metrics').status_code == 200
+        # A newer simulation cannot replace real measurements in Prometheus.
+        client.app.state.store.insert(sample.model_copy(update={'sample_id': 'sim', 'simulated': True, 'distance_mm': 100}), 'topic')
+        assert 'smartgas_device_volume_liters{device_id="NodeMCU_ESP32"} 600\n' in client.get('/metrics').text
+        client.app.state.store.insert(sample.model_copy(update={'sample_id': 'error', 'measurement_status': 'no_echo', 'distance_mm': None}), 'topic')
+        text = client.get('/metrics').text
+        assert 'smartgas_device_volume_liters{' not in text
+        assert 'smartgas_device_fill_percent{' not in text
+        assert 'smartgas_device_measurement_valid{device_id="NodeMCU_ESP32"} 0\n' in text
+        assert 'smartgas_device_stale{device_id="NodeMCU_ESP32"} 0\n' in text
+
+
+def test_prometheus_endpoints_require_configured_api_token(settings):
+    with TestClient(create_app(replace(settings, api_token='metrics-token'))) as client:
+        for path in ['/metrics', '/api/v1/metrics']:
+            assert client.get(path).status_code == 401
+            assert client.get(path, headers={'Authorization': 'Bearer metrics-token'}).status_code == 200
+
+
+def test_prometheus_label_escaping():
+    from app.metrics import escape
+    assert escape('a"b\\c\nd') == 'a\\"b\\\\c\\nd'

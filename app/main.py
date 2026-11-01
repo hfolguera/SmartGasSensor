@@ -6,10 +6,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.calibration import calibrated_values
+from app.metrics import render_metrics
 from app.mqtt_service import MqttService
 from app.notifications import NotificationPolicy, NotificationSender
 from app.settings import Settings, load_tanks
@@ -105,6 +106,7 @@ def create_app(settings: Settings | None = None):
         mqtt["last_message_at"] = iso(mqtt["last_message_at"])
         return {"server_time": iso(time.time()), "mqtt": mqtt,
                 "stale_after_seconds": settings.stale_after_seconds, "retention_days": settings.retention_days,
+                "mqtt_monitor": {**app.state.store.mqtt_monitor(), "silence_threshold_seconds": 86400},
                 "notifications": {"enabled": settings.ntfy_enabled, **app.state.store.notification_summary()}}
 
     @app.get("/api/v1/devices", dependencies=[Depends(authorize)])
@@ -155,14 +157,11 @@ def create_app(settings: Settings | None = None):
                 "web_url": settings.public_web_url, "hysteresis_percent": settings.ntfy_hysteresis_percent,
                 **app.state.store.notification_summary(), "events": events}
 
-    @app.get("/api/v1/metrics", dependencies=[Depends(authorize)], response_class=PlainTextResponse)
+    @app.get("/metrics", dependencies=[Depends(authorize)], include_in_schema=False)
+    @app.get("/api/v1/metrics", dependencies=[Depends(authorize)])
     def metrics():
-        mqtt = app.state.mqtt.status()
-        lines = ["# HELP smartgas_mqtt_connected MQTT connection state", "# TYPE smartgas_mqtt_connected gauge",
-                 f"smartgas_mqtt_connected {int(mqtt['connected'])}"]
-        for key in ("received_total", "duplicates_total", "rejected_total", "storage_errors_total"):
-            lines.extend([f"# TYPE smartgas_{key} counter", f"smartgas_{key} {mqtt[key]}"])
-        return "\n".join(lines) + "\n"
+        return Response(render_metrics(app.state.store, app.state.mqtt.status(), app.state.tanks, settings),
+                        media_type="text/plain; version=0.0.4; charset=utf-8")
 
     return app
 

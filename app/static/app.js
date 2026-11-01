@@ -29,7 +29,7 @@ function renderDevice(device) {
   $('state').className = 'badge' + (['sensor_error','calibration_error'].includes(device.state) ? ' error' : device.state !== 'ok' ? ' warning' : '');
   const fallback = device.measurement_status !== 'ok' && device.last_valid;
   const display = fallback || device;
-  renderRisk(device, display, fallback);
+  renderAutonomy(device, display, fallback);
   unit('volume', display.volume_liters, 'L', 0);
   $('tank-fill').style.height = Math.max(0,Math.min(100,display.fill_percent || 0))+'%';
   $('tank-percent').textContent = display.fill_percent == null ? '—' : number(display.fill_percent,0)+'%';
@@ -60,22 +60,22 @@ function renderDevice(device) {
   for (const [key,value] of diagnostics) { const dt=document.createElement('dt'),dd=document.createElement('dd'); dt.textContent=key;dd.textContent=value;$('diagnostics').append(dt,dd); }
   $('api-link').textContent='/api/v1/devices/'+encodeURIComponent(device.device_id)+'/latest';
 }
-function renderRisk(device, display, fallback) {
-  const percent=display.fill_percent, known=percent != null, risk=known?Math.max(0,Math.min(100,100-percent)):null;
-  $('risk-marker').hidden=!known;
-  $('risk-meter').classList.toggle('unknown',!known);
-  if(!known){$('risk-label').textContent='Sense dades';$('risk-meter').removeAttribute('aria-valuenow');$('risk-meter').setAttribute('aria-valuetext','Sense nivell calibrat');$('risk-note').textContent='Cal una lectura vàlida i calibrada.';return;}
-  const label=percent<=10?'Crític':percent<=20?'Alt':percent<=50?'Moderat':'Baix';
-  $('risk-label').textContent=label+' · '+number(percent)+'% restant';
-  $('risk-marker').style.left=risk+'%';
-  $('risk-meter').setAttribute('aria-valuenow',String(risk));
-  $('risk-meter').setAttribute('aria-valuetext',label+', '+number(percent)+'% restant');
-  $('risk-note').textContent=device.simulated?'Simulació: no genera notificacions.':fallback||device.stale?'Risc segons l’últim nivell vàlid; comprova l’antiguitat de la lectura.':'Risc orientatiu segons el nivell; avisos reforçats al 20% i al 10%.';
+function renderAutonomy(device, display, fallback) {
+  const percent=display.fill_percent, known=percent != null, autonomy=known?Math.max(0,Math.min(100,percent)):null;
+  $('autonomy-marker').hidden=!known;
+  $('autonomy-meter').classList.toggle('unknown',!known);
+  if(!known){$('autonomy-label').textContent='Sense dades';$('autonomy-meter').removeAttribute('aria-valuenow');$('autonomy-meter').setAttribute('aria-valuetext','Sense nivell calibrat');$('autonomy-note').textContent='Cal una lectura vàlida i calibrada.';return;}
+  const label=percent<=10?'Crítica':percent<=20?'Baixa':percent<=50?'Moderada':'Alta';
+  $('autonomy-label').textContent=label+' · '+number(percent)+'% restant';
+  $('autonomy-marker').style.left=autonomy+'%';
+  $('autonomy-meter').setAttribute('aria-valuenow',String(autonomy));
+  $('autonomy-meter').setAttribute('aria-valuetext',label+', '+number(percent)+'% restant');
+  $('autonomy-note').textContent=device.simulated?'Simulació: no genera notificacions.':fallback||device.stale?'Autonomia segons l’últim nivell vàlid; comprova l’antiguitat de la lectura.':'Orientativa segons el nivell; no és una estimació en dies. Avisos al 20% i al 10%.';
 }
 function renderNotifications(data) {
   $('notification-status').textContent=!data.enabled?'Desactivats':data.last_error?'Reintent pendent':data.pending?'Enviament pendent':'Actius';
   $('notification-status').className='badge'+(data.last_error?' error':data.pending?' warning':'');
-  $('notification-summary').textContent='ntfy / '+data.topic+' · '+data.sent+' enviats · '+data.pending+' pendents. '+(data.last_error?'Últim error: '+data.last_error+'. ':'')+'Prioritat alta al 20% i urgent al 10%. Obrir un avís porta a la web final.';
+  $('notification-summary').textContent='ntfy / '+data.topic+' · '+data.sent+' enviats · '+data.pending+' pendents. '+(data.last_error?'Últim error: '+data.last_error+'. ':'')+'Prioritat alta al 20% i urgent al 10%. Avís després de 24 h sense lectures MQTT noves. Obrir un avís porta a la web final.';
   $('notification-events').replaceChildren();
   for(const event of data.events.slice(0,5)){
     const row=document.createElement('div'),content=document.createElement('div'),title=document.createElement('strong'),info=document.createElement('p'),badge=document.createElement('span');

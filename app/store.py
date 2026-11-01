@@ -1,3 +1,4 @@
+import hashlib
 import json
 import sqlite3
 import threading
@@ -42,8 +43,17 @@ class Store:
             next_attempt_at REAL NOT NULL, sent_at REAL, last_error TEXT
           );
           CREATE INDEX IF NOT EXISTS notification_pending ON notification_outbox(status,next_attempt_at,id);
-          PRAGMA user_version=2;
+          CREATE TABLE IF NOT EXISTS mqtt_monitor (
+            id INTEGER PRIMARY KEY CHECK(id=1), reference_at REAL NOT NULL,
+            last_received_at REAL, alerted INTEGER NOT NULL DEFAULT 0
+          );
+          PRAGMA user_version=3;
         """)
+
+        with self.db:
+            self.db.execute("""INSERT OR IGNORE INTO mqtt_monitor(id,reference_at,last_received_at)
+                SELECT 1,COALESCE(MAX(received_at),?),MAX(received_at) FROM readings WHERE simulated=0""",
+                (time.time(),))
 
     def insert(self, sample: Telemetry, topic: str, received_at: float | None = None) -> bool:
         now = time.time() if received_at is None else received_at
@@ -55,6 +65,10 @@ class Store:
                  sample.measurement_status, sample.distance_mm, int(sample.simulated)),
             )
             inserted = cursor.rowcount == 1
+            if inserted and not sample.simulated:
+                self.db.execute("UPDATE mqtt_monitor SET reference_at=?,last_received_at=?,alerted=0 WHERE id=1",
+                                (now, now))
+                self.db.execute("UPDATE notification_outbox SET status='cancelled' WHERE threshold_percent=-1 AND status='pending'")
             if inserted and self.notification_policy is not None:
                 self.notification_policy.plan(self.db, sample, now)
             # Conserva sempre l'última lectura de cada dispositiu, encara que sigui antiga.
@@ -75,10 +89,11 @@ class Store:
             return None
         return {**json.loads(row["payload"]), "received_at": row["received_at"], "topic": row["topic"]}
 
-    def latest_all(self):
+    def latest_all(self, real_only=False):
         with self.lock:
-            rows = self.db.execute("""SELECT * FROM readings WHERE id IN
-                (SELECT MAX(id) FROM readings GROUP BY device_id) ORDER BY device_id""").fetchall()
+            condition = "WHERE simulated=0" if real_only else ""
+            rows = self.db.execute(f"""SELECT * FROM readings WHERE id IN
+                (SELECT MAX(id) FROM readings {condition} GROUP BY device_id) ORDER BY device_id""").fetchall()
             return [self.decode(row) for row in rows]
 
     def last_valid(self, device_id):
@@ -97,6 +112,37 @@ class Store:
                 (device_id, since, before if before is not None else time.time() + 1, limit),
             ).fetchall()
             return [self.decode(row) for row in reversed(rows)]
+
+    def mqtt_monitor(self):
+        with self.lock:
+            return dict(self.db.execute("SELECT * FROM mqtt_monitor WHERE id=1").fetchone())
+
+    def check_mqtt_silence(self, settings, now=None):
+        """Un avís per interrupció; el termini persisteix encara que es reiniciï el procés."""
+        if not settings.ntfy_enabled or not settings.mqtt_enabled:
+            return False
+        now = time.time() if now is None else now
+        with self.lock, self.db:
+            monitor = self.mqtt_monitor()
+            if monitor['alerted'] or now - monitor['reference_at'] <= 86400:
+                return False
+            elapsed = (now - monitor['reference_at']) / 3600
+            message = (f"Fa {elapsed:.1f} hores que no arriba cap lectura MQTT nova del sensor. "
+                       "Comprova l'alimentació, la connexió Wi-Fi i el broker MQTT.")
+            if monitor['last_received_at'] is None:
+                message += " Encara no s'ha rebut cap lectura real des que es va iniciar la supervisió."
+            message += f"\nVeure l'evolució: {settings.public_web_url}"
+            payload = {"topic": settings.ntfy_topic, "title": "Sensor sense dades durant més de 24 hores",
+                       "message": message, "priority": 4, "tags": ["warning", "satellite"],
+                       "click": settings.public_web_url,
+                       "actions": [{"action": "view", "label": "Veure evolució", "url": settings.public_web_url}]}
+            event_id = hashlib.sha256(f"mqtt-silence:{monitor['reference_at']}".encode()).hexdigest()
+            self.db.execute("""INSERT INTO notification_outbox
+                (event_id,device_id,threshold_percent,payload,created_at,next_attempt_at)
+                VALUES(?,?,-1,?,?,?) ON CONFLICT(event_id) DO NOTHING""",
+                (event_id, 'mqtt', json.dumps(payload, ensure_ascii=False), now, now))
+            self.db.execute("UPDATE mqtt_monitor SET alerted=1 WHERE id=1")
+            return True
 
     def next_notification(self):
         with self.lock:
@@ -125,7 +171,8 @@ class Store:
     def notifications(self, limit=20):
         with self.lock:
             rows = self.db.execute("SELECT * FROM notification_outbox ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
-            return [{"id": row['id'], "device_id": row['device_id'], "threshold_percent": row['threshold_percent'],
+            return [{"id": row['id'], "device_id": row['device_id'], "threshold_percent": None if row['threshold_percent'] == -1 else row['threshold_percent'],
+                     "type": "mqtt_silence" if row['threshold_percent'] == -1 else "level",
                      "created_at": row['created_at'], "sent_at": row['sent_at'], "status": row['status'],
                      "attempts": row['attempts'], "last_error": row['last_error'],
                      **json.loads(row['payload'])} for row in rows]

@@ -6,7 +6,7 @@ Monitor local del dipòsit de gasoil: rep el JSON MQTT del NodeMCU ESP8266, el d
 ESP8266 → Mosquitto → SmartGasSensor (MQTT + FastAPI) → SQLite/PVC
                                   ├→ navegador
                                   └→ API / Home Assistant
-main → GitHub Actions → GHCR → branca gitops → ArgoCD → Kubernetes
+                                  └→ Prometheus
 ```
 
 ## Què inclou
@@ -18,7 +18,7 @@ main → GitHub Actions → GHCR → branca gitops → ArgoCD → Kubernetes
 - Última lectura vàlida separada de l'últim intent. Els errors no es representen com a zero litres.
 - Validació del contracte, deduplicació, reconnexió MQTT i sessió persistent QoS 1.
 - SQLite WAL amb commit abans de l'ACK MQTT; volum persistent i una sola instància.
-- Docker sense root, Compose, Kubernetes/Kustomize, GitHub Actions i Application ArgoCD.
+- Docker sense root, Compose, manifests Kubernetes/Kustomize i construcció d’imatges amb GitHub Actions.
 
 El nom inicial previst és `hfolguera/SmartGasSensor` i la imatge `ghcr.io/hfolguera/smartgassensor`. El repositori remot i la publicació no es creen només per tenir aquests fitxers: cal pujar el projecte a GitHub i executar el workflow.
 
@@ -145,7 +145,33 @@ Si falla una escriptura SQLite, el missatge no es confirma, la connexió es tanc
 
 La base de dades conserva les dades en reiniciar el procés o recrear el contenidor si es manté el volum. SQLite requereix un volum que suporti correctament locking i WAL, preferiblement bloc/local; no assumeixis que qualsevol NFS és adequat. No escalis `replicas` ni workers per damunt d'1. Per HA/múltiples rèpliques cal separar ingestió i migrar a PostgreSQL.
 
-## Notificacions ntfy i risc d’esgotament
+## Prometheus
+
+`GET /metrics` i `GET /api/v1/metrics` exposen el mateix contingut en [format Prometheus 0.0.4](https://prometheus.io/docs/instrumenting/exposition_formats/). Si configures `API_TOKEN`, també requereixen `Authorization: Bearer …`.
+
+- Connexió i subscripció MQTT; comptadors de recepcions, duplicats, rebutjos i errors d’emmagatzematge des de l’inici del procés.
+- Temps des de l’última lectura real, instant de recepció persistent i estat de l’avís de silenci.
+- Avisos retinguts a SQLite per estat (`pending`, `sent`, `cancelled`), com a gauges perquè la retenció pot reduir-los.
+- Per `device_id`: antiguitat, dada obsoleta, lectura vàlida, mostres, distància en metres, percentatge, litres, Wi-Fi, bateria en volts i període de mostreig.
+
+No s’exporten simulacions. Els valors desconeguts o les mesures fallides s’ometen; no s’inventen zeros. Un nivell antic pot continuar exposat: comprova sempre `smartgas_device_stale` i `smartgas_device_measurement_valid` abans de generar alertes. No s’utilitzen identificadors de mostra com a etiquetes.
+
+Exemple de configuració de scrape dins del clúster (Service HTTP al port 80):
+
+```yaml
+scrape_configs:
+  - job_name: smartgas
+    metrics_path: /metrics
+    scrape_interval: 30s
+    static_configs:
+      - targets: [smartgas.smartgas.svc.cluster.local:80]
+    # Si API_TOKEN està configurat:
+    # authorization:
+    #   type: Bearer
+    #   credentials_file: /etc/prometheus/secrets/smartgas-api-token
+```
+
+## Notificacions ntfy i autonomia de combustible
 
 L’aplicació avisa quan una **nova lectura real i vàlida** travessa cap avall els llindars **90%, 80%, …, 20%, 10% i 0%**. Si una lectura salta diversos llindars, genera un avís per cadascun. No es generen avisos amb simulacions, errors del sensor ni lectures sense calibratge vàlid.
 
@@ -155,6 +181,8 @@ L’aplicació avisa quan una **nova lectura real i vàlida** travessa cap avall
 - La primera lectura després d’habilitar els avisos estableix la referència: no s’envien tots els llindars històrics.
 - Un llindar notificat es reactiva després d’un ascens d’almenys **5 punts** sobre seu. Per exemple, després d’avisar al 90%, no es repeteix fins que el nivell arriba al 95% i torna a baixar al 90%.
 - En canviar el calibratge s’estableix una nova referència i es cancel·len els avisos pendents del calibratge anterior. Una recuperació de nivell també cancel·la els avisos pendents dels llindars que ja s’han superat amb el marge de reactivació.
+
+També s’envia un avís de prioritat alta (`4`) quan passen **més de 24 hores sense una lectura MQTT real nova**, amb enllaç a la web. El control s’executa en segon pla encara que no arribin missatges. Només s’avisa una vegada per interrupció; una nova lectura reactiva el control i cancel·la l’avís pendent si encara no s’ha entregat. Un error del sensor (`no_echo`, etc.) compta com a recepció; els duplicats, JSON rebutjats i simulacions no reinicien el termini. El rellotge i l’estat persisteixen als reinicis. Sense historial, es compta des del primer inici de la supervisió. Amb `MQTT_ENABLED=false` o `NTFY_ENABLED=false` no es generen aquests avisos. La supervisió cobreix el flux MQTT global; no és una alarma individual per cada sensor.
 
 Configuració local a `.env` i de Kubernetes al ConfigMap:
 
@@ -172,48 +200,18 @@ Els missatges contenen nivell, litres estimats, un text segons urgència, un **e
 
 La lectura, l’estat dels llindars i la cua d’avisos es desen en una mateixa transacció SQLite abans de confirmar MQTT. Un fil independent fa els enviaments HTTP: si ntfy falla, la ingestió continua i els avisos es reintenten amb espera creixent, entre 30 segons i una hora. Els pendents sobreviuen als reinicis. Es conserva l’històric d’avisos segons la retenció configurada. Com en qualsevol entrega HTTP sense clau d’idempotència del receptor, una caiguda entre l’acceptació d’ntfy i el registre de la confirmació pot causar una repetició puntual.
 
-La barra **Risc d’esgotament** va de verd (més reserva, risc baix) a vermell (menys reserva, risc crític), amb marcador i text accessible. És una classificació basada en el nivell, no una predicció de dies d’autonomia. Si la lectura és antiga o correspon a l’últim valor vàlid després d’un error, la web ho indica.
+La barra **Autonomia de combustible** mostra el combustible restant: vermell (reserva crítica) a l’esquerra i verd (reserva alta) a la dreta, amb marcador i text accessible. És una classificació basada en el nivell, no una predicció de dies d’autonomia. Si la lectura és antiga o correspon a l’últim valor vàlid després d’un error, la web ho indica.
 
 `GET /api/v1/notifications` mostra configuració no sensible, comptadors, últims avisos, intents i errors. `GET /api/v1/status` inclou un resum. Una resposta HTTP 401/403 d’ntfy es mostra com a reintent pendent: cal configurar les credencials abans que els avisos puguin entregar-se.
 
-## GitHub i GHCR
+## Kubernetes (desplegament manual)
 
-1. Crea un repositori GitHub, públic o privat, anomenat `SmartGasSensor` a `hfolguera`.
-2. Puja aquest projecte a la branca `main`. No afegeixis secrets amb `git add -f`.
-3. A GitHub comprova que Actions està habilitat i que les polítiques permeten `packages: write` i `contents: write` als jobs que ho declaren. La branca `gitops` ha de permetre el push del bot; la protecció de `main` pot mantenir-se.
-4. El workflow es dispara a cada push a qualsevol branca excepte `gitops`; les PR només fan proves/build sense publicar. `main` promociona la imatge per ArgoCD. Publica `sha-<commit complet>` per a `linux/amd64` i `linux/arm64`, amb SBOM i provenance.
-5. Fa login a GHCR amb `GITHUB_TOKEN`; **no cal guardar cap PAT d'escriptura** com a secret d'Actions.
-6. La publicació no està condicionada a la visibilitat del repositori ni del paquet: publica tant si és públic com privat. El workflow no canvia la visibilitat de GHCR; es gestiona a GitHub. Les PR continuen fent build sense publicar. `.env`, credencials i dades locals continuen exclosos de Git i del context de la imatge.
-
-```bash
-git remote add origin https://github.com/hfolguera/SmartGasSensor.git
-git push -u origin main
-```
-
-Si ja hi ha `origin`, revisa'l abans de canviar-lo. Si el repositori té un altre nom, actualitza `argocd/application.yaml` i els noms d'imatge a `k8s` i `scripts/update_gitops.sh`. El workflow deriva el nom GHCR del repositori real i el passa a la promoció.
-
-## Flux GitOps / ArgoCD
-
-El job de publicació de `main`, després de les proves i del push a GHCR:
-
-1. Copia els manifests Kustomize de `main`.
-2. Substitueix `bootstrap` pel **digest immutable** `sha256:…` de la imatge acabada de publicar.
-3. Crea o actualitza `gitops`, una branca que conté només `k8s/`.
-4. ArgoCD observa aquesta branca i sincronitza amb `prune` i `selfHeal`.
-
-No es fa `kubectl apply` des de GitHub i no es comparteixen credencials de clúster amb Actions. No cal ArgoCD Image Updater. El tag `bootstrap` de `main` és només una plantilla i no existeix a GHCR: **espera que la primera Action generi `gitops` abans d'instal·lar l'Application**. No despleguis directament l'overlay de `main` sense posar-hi abans un digest real.
-
-Les promocions estan serialitzades i una compilació d'un commit que ja no és el cap de `main` no es promociona. Tots els pushes igualment poden construir la seva imatge. Els canvis de manifests s'editen a `main`, mai manualment a `gitops`.
-
-### Preparar Kubernetes
-
-Edita abans del primer push:
+Revisa la configuració abans de desplegar:
 
 - `k8s/overlays/production/ingress.yaml`: host `smartgassensor.calfolguera.freemyip.com`, `ingressClassName: nginx`, TLS segons el clúster.
 - `k8s/base/pvc.yaml`: 2 GiB; omet `storageClassName` per utilitzar la classe per defecte. Afegeix-la si cal.
 - `k8s/base/kustomization.yaml`: IP, port, topic, client ID, retenció i llindar d'antiguitat.
 - `k8s/base/tanks.json`: dimensions reals, quan les tinguis.
-- `argocd/application.yaml`: nom del repositori i projecte ArgoCD si no utilitzes `default`.
 
 Renderitza localment, sense desplegar:
 
@@ -232,12 +230,12 @@ El script següent demana credencials sense mostrar-les i les envia a Kubernetes
 python3 scripts/create_secrets.py
 ```
 
-Per `ghcr-pull`, utilitza un PAT clàssic amb `read:packages` d'un compte amb accés al paquet privat; autoritza SSO si l'organització ho requereix. Aquest secret el fa servir Kubernetes, no ArgoCD per llegir Git. Per al repositori Git privat, configura també una credencial de lectura del repositori a ArgoCD (deploy key o token), mitjançant la seva UI o CLI.
+Si la imatge és privada, `ghcr-pull` necessita una credencial amb permís de lectura del paquet. Si és pública pots eliminar `imagePullSecrets` del Deployment.
 
-Quan existeixi `gitops`, els secrets i la credencial Git d'ArgoCD:
+Substitueix el tag `bootstrap` de `k8s/overlays/production/kustomization.yaml` pel tag o digest real de la imatge que vols desplegar. Aplica els manifests manualment:
 
 ```bash
-kubectl apply -f argocd/application.yaml
+kubectl apply -k k8s/overlays/production
 kubectl -n smartgas get pods,pvc,ingress
 kubectl -n smartgas logs deployment/smartgas -f
 ```
@@ -246,7 +244,7 @@ La NetworkPolicy, si el clúster en té, ha de permetre DNS i sortida TCP al bro
 
 ## Backups i actualitzacions
 
-El PVC porta `Prune=false,Delete=false` perquè ArgoCD no el destrueixi automàticament. Això no és un backup. Configura snapshots/backups del volum al teu clúster.
+Les lectures i els avisos es desen al PVC `smartgas-data`. Conserva aquest volum durant les actualitzacions i configura snapshots/backups al clúster.
 
 Per fer una còpia coherent d'una SQLite local mentre l'aplicació està activa:
 
@@ -278,4 +276,3 @@ Per enviar una mostra simulada, el script `scripts/publish_sample.py` llegeix le
 - [GitHub Actions: publicar imatges](https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images)
 - [GHCR: permisos i visibilitat](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility)
 - [Kubernetes: registres privats](https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/)
-- [ArgoCD: sincronització automàtica](https://argo-cd.readthedocs.io/en/latest/user-guide/auto_sync/)

@@ -10,5 +10,4 @@ secrets
 *.db*
 tests
 k8s
-argocd
 docs

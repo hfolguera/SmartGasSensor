@@ -115,6 +115,7 @@ class NotificationSender:
     def run(self):
         while not self.stopped.is_set():
             try:
+                self.store.check_mqtt_silence(self.settings)
                 if not self.deliver_one():
                     self.stopped.wait(1)
             except sqlite3.Error:

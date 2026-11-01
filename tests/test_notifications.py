@@ -220,7 +220,7 @@ def test_v1_database_upgrades_without_losing_readings(tmp_path, sample):
     old.close()
     upgraded = Store(path)
     assert upgraded.latest_all()[0]['sample_id'] == sample.sample_id
-    assert upgraded.db.execute('PRAGMA user_version').fetchone()[0] == 2
+    assert upgraded.db.execute('PRAGMA user_version').fetchone()[0] == 3
     assert upgraded.notification_summary()['pending'] == 0
     upgraded.close()
 
@@ -235,3 +235,89 @@ def test_unexpected_ntfy_json_does_not_crash_worker(notification_setup):
     assert sender.deliver_one()
     assert store.notification_summary()['pending'] == 1
     assert store.notification_summary()['sent'] == 0
+
+
+def test_silence_alert_after_24h_once_and_restart(tmp_path):
+    path = str(tmp_path / 'silence.db')
+    settings = Settings(ntfy_enabled=True)
+    store = Store(path)
+    start = store.mqtt_monitor()['reference_at']
+    assert not store.check_mqtt_silence(settings, start + 86400)
+    store.close()
+    store = Store(path)
+    assert store.check_mqtt_silence(settings, start + 86401)
+    assert not store.check_mqtt_silence(settings, start + 172800)
+    event = store.notifications()[0]
+    assert event['type'] == 'mqtt_silence'
+    assert event['threshold_percent'] is None
+    assert event['priority'] == 4
+    assert event['click'] == settings.public_web_url
+    assert event['topic'] == 'home-notifications'
+    assert 'Encara no' in event['message']
+    store.close()
+    store = Store(path)
+    assert not store.check_mqtt_silence(settings, start + 259200)
+    assert len(store.notifications()) == 1
+    store.close()
+
+
+def test_real_error_reading_rearms_silence_but_simulation_and_duplicates_do_not(tmp_path, sample):
+    settings = Settings(ntfy_enabled=True)
+    store = Store(str(tmp_path / 'silence.db'))
+    start = store.mqtt_monitor()['reference_at']
+    store.insert(sample, 'topic', start)
+    assert store.check_mqtt_silence(settings, start + 86401)
+    store.insert(sample, 'topic', start + 86402)
+    store.insert(sample.model_copy(update={'sample_id': 'simulation', 'simulated': True}), 'topic', start + 86403)
+    assert store.mqtt_monitor()['last_received_at'] == start
+    assert store.notification_summary()['pending'] == 1
+    error = sample.model_copy(update={'sample_id': 'new-error', 'measurement_status': 'no_echo', 'distance_mm': None})
+    store.insert(error, 'topic', start + 86404)
+    assert store.notification_summary()['cancelled'] == 1
+    assert not store.check_mqtt_silence(settings, start + 86405)
+    assert store.check_mqtt_silence(settings, start + 172805)
+    assert len(store.notifications()) == 2
+    store.close()
+
+
+def test_silence_monitor_migration_uses_last_real_receipt(tmp_path, sample):
+    path = str(tmp_path / 'v2.db')
+    store = Store(path)
+    store.insert(sample, 'topic', time.time() - 90000)
+    store.db.executescript('DROP TABLE mqtt_monitor; PRAGMA user_version=2;')
+    store.close()
+    store = Store(path)
+    assert store.check_mqtt_silence(Settings(ntfy_enabled=True))
+    assert 'Encara no' not in store.notifications()[0]['message']
+    assert store.latest_all()[0]['sample_id'] == sample.sample_id
+    store.close()
+
+
+@pytest.mark.parametrize('settings', [Settings(ntfy_enabled=False), Settings(ntfy_enabled=True, mqtt_enabled=False)])
+def test_silence_alert_disabled_with_no_mqtt_or_no_ntfy(tmp_path, settings):
+    store = Store(str(tmp_path / 'disabled.db'))
+    assert not store.check_mqtt_silence(settings, time.time() + 90000)
+    assert not store.notifications()
+    store.close()
+
+
+def test_silence_worker_runs_without_incoming_messages(tmp_path, monkeypatch):
+    import threading
+    settings = Settings(ntfy_enabled=True)
+    store = Store(str(tmp_path / 'worker.db'))
+    with store.db:
+        store.db.execute('UPDATE mqtt_monitor SET reference_at=?', (time.time() - 90000,))
+    sender = NotificationSender(settings, store)
+    queued = threading.Event()
+
+    def capture():
+        assert store.next_notification()['threshold_percent'] == -1
+        queued.set()
+        sender.stopped.set()
+        return True
+
+    monkeypatch.setattr(sender, 'deliver_one', capture)
+    sender.start()
+    assert queued.wait(2)
+    sender.stop()
+    store.close()
