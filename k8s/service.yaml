@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: smartgas
+  name: smartgassensor
 spec:
   selector:
-    app.kubernetes.io/name: smartgas
+    app.kubernetes.io/name: smartgassensor
   ports:
     - name: http
       port: 80

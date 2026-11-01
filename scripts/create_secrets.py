@@ -13,7 +13,7 @@ def apply(resource):
 if __name__ == "__main__":
     context = subprocess.check_output(["kubectl", "config", "current-context"], text=True).strip()
     print("Context Kubernetes:", context)
-    print("Es crearan/actualitzaran els secrets smartgas-secrets i ghcr-pull al namespace smartgas.")
+    print("Es crearan/actualitzaran els secrets smartgassensor-secrets i ghcr-pull al namespace smartgassensor.")
     if input("Escriu el nom del context per continuar: ").strip() != context:
         raise SystemExit("Cancel·lat")
     mqtt_user = input("Usuari MQTT [mosquitto]: ").strip() or "mosquitto"
@@ -24,12 +24,12 @@ if __name__ == "__main__":
     ghcr_token = getpass.getpass("Token GHCR amb read:packages: ")
     if not ghcr_token:
         raise SystemExit("Cal un token de lectura per la imatge privada")
-    apply({"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "smartgas"}})
+    apply({"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "smartgassensor"}})
     apply({"apiVersion": "v1", "kind": "Secret", "type": "Opaque",
-           "metadata": {"name": "smartgas-secrets", "namespace": "smartgas"},
+           "metadata": {"name": "smartgassensor-secrets", "namespace": "smartgassensor"},
            "stringData": {"MQTT_USERNAME": mqtt_user, "MQTT_PASSWORD": mqtt_password, "API_TOKEN": api_token, "NTFY_TOKEN": ntfy_token}})
     auth = base64.b64encode(f"{ghcr_user}:{ghcr_token}".encode()).decode()
     docker_config = json.dumps({"auths": {"ghcr.io": {"auth": auth}}})
     apply({"apiVersion": "v1", "kind": "Secret", "type": "kubernetes.io/dockerconfigjson",
-           "metadata": {"name": "ghcr-pull", "namespace": "smartgas"},
+           "metadata": {"name": "ghcr-pull", "namespace": "smartgassensor"},
            "data": {".dockerconfigjson": base64.b64encode(docker_config.encode()).decode()}})

@@ -1,9 +1,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: smartgas
+  name: smartgassensor
   labels:
-    app.kubernetes.io/name: smartgas
+    app.kubernetes.io/name: smartgassensor
 spec:
   replicas: 1
   # Un únic consumidor amb client ID estable i una única SQLite sobre PVC.
@@ -12,11 +12,11 @@ spec:
   revisionHistoryLimit: 3
   selector:
     matchLabels:
-      app.kubernetes.io/name: smartgas
+      app.kubernetes.io/name: smartgassensor
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: smartgas
+        app.kubernetes.io/name: smartgassensor
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
@@ -31,7 +31,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-        - name: smartgas
+        - name: smartgassensor
           image: ghcr.io/hfolguera/smartgassensor:bootstrap
           imagePullPolicy: IfNotPresent
           ports:
@@ -39,9 +39,9 @@ spec:
               containerPort: 8080
           envFrom:
             - configMapRef:
-                name: smartgas-config
+                name: smartgassensor-config
             - secretRef:
-                name: smartgas-secrets
+                name: smartgassensor-secrets
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -81,10 +81,10 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: smartgas-data
+            claimName: smartgassensor-data
         - name: tanks
           configMap:
-            name: smartgas-tanks
+            name: smartgassensor-tanks
         - name: tmp
           emptyDir:
             sizeLimit: 16Mi

@@ -1,21 +1,21 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: smartgas
+namespace: smartgassensor
 resources:
   - namespace.yaml
   - deployment.yaml
   - service.yaml
   - pvc.yaml
 configMapGenerator:
-  - name: smartgas-config
+  - name: smartgassensor-config
     literals:
       - MQTT_ENABLED=true
       - MQTT_HOST=192.168.1.216
       - MQTT_PORT=1883
       - MQTT_TOPIC=home/gas/telemetry
-      - MQTT_CLIENT_ID=smartgas-production
+      - MQTT_CLIENT_ID=smartgassensor-production
       - MQTT_TLS=false
-      - DB_PATH=/data/smartgas.db
+      - DB_PATH=/data/smartgassensor.db
       - TANK_CONFIG_PATH=/config/tanks.json
       - STALE_AFTER_SECONDS=3600
       - RETENTION_DAYS=730
@@ -24,7 +24,7 @@ configMapGenerator:
       - NTFY_TOPIC=home-notifications
       - NTFY_HYSTERESIS_PERCENT=5
       - PUBLIC_WEB_URL=https://smartgassensor.calfolguera.freemyip.com
-  - name: smartgas-tanks
+  - name: smartgassensor-tanks
     files:
       - tanks.json
 images:

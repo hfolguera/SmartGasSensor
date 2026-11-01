@@ -35,7 +35,7 @@ docker compose logs -f smartgas
 
 Obre [http://localhost:8080](http://localhost:8080). La web consulta dades cada 15 s; el sensor pot continuar publicant cada 60 o 900 s. La primera lectura apareixerà quan el sensor torni a publicar: el firmware fa servir `retain=false`.
 
-`.env` està exclòs de Git i del context Docker. Si ja s'ha preparat un `.env` local, no el sobreescriguis amb la plantilla. Per al desenvolupament local fes servir `MQTT_CLIENT_ID=smartgas-local`, diferent de `smartgas-production`. Dues aplicacions amb el mateix client ID s'expulsen mútuament del broker.
+`.env` està exclòs de Git i del context Docker. Si ja s'ha preparat un `.env` local, no el sobreescriguis amb la plantilla. Per al desenvolupament local fes servir `MQTT_CLIENT_ID=smartgas-local`, diferent de `smartgassensor-production`. Dues aplicacions amb el mateix client ID s'expulsen mútuament del broker.
 
 La web es vincula només a `127.0.0.1` en Compose. La base de dades queda al volum `smartgas-data`. No utilitzis `docker compose down -v` si vols conservar les lectures.
 
@@ -160,15 +160,15 @@ Exemple de configuració de scrape dins del clúster (Service HTTP al port 80):
 
 ```yaml
 scrape_configs:
-  - job_name: smartgas
+  - job_name: smartgassensor
     metrics_path: /metrics
     scrape_interval: 30s
     static_configs:
-      - targets: [smartgas.smartgas.svc.cluster.local:80]
+      - targets: [smartgassensor.smartgassensor.svc.cluster.local:80]
     # Si API_TOKEN està configurat:
     # authorization:
     #   type: Bearer
-    #   credentials_file: /etc/prometheus/secrets/smartgas-api-token
+    #   credentials_file: /etc/prometheus/secrets/smartgassensor-api-token
 ```
 
 ## Notificacions ntfy i autonomia de combustible
@@ -194,7 +194,7 @@ NTFY_HYSTERESIS_PERCENT=5
 PUBLIC_WEB_URL=https://smartgassensor.calfolguera.freemyip.com
 ```
 
-Si el servidor requereix autenticació, afegeix `NTFY_TOKEN` al `.env` local o al Secret `smartgas-secrets`; alternativament `NTFY_USERNAME` i `NTFY_PASSWORD`. No es guarden tokens al repositori ni es retornen per l’API. El script `create_secrets.py` admet el token ntfy opcional. El client comprova TLS i no segueix redireccions amb credencials.
+Si el servidor requereix autenticació, afegeix `NTFY_TOKEN` al `.env` local o al Secret `smartgassensor-secrets`; alternativament `NTFY_USERNAME` i `NTFY_PASSWORD`. No es guarden tokens al repositori ni es retornen per l’API. El script `create_secrets.py` admet el token ntfy opcional. El client comprova TLS i no segueix redireccions amb credencials.
 
 Els missatges contenen nivell, litres estimats, un text segons urgència, un **enllaç directe** i el botó **Veure evolució** cap a `PUBLIC_WEB_URL`. El calibratge provisional s’indica al missatge. Subscriu el teu client ntfy al servidor indicat i al topic `home-notifications`.
 
@@ -220,9 +220,9 @@ Renderitza localment, sense desplegar:
 kubectl kustomize k8s
 ```
 
-Crea dos secrets al namespace `smartgas`, **fora de Git**:
+Crea dos secrets al namespace `smartgassensor`, **fora de Git**:
 
-- `smartgas-secrets`: `MQTT_USERNAME`, `MQTT_PASSWORD`, `API_TOKEN` (pot ser buit) i `NTFY_TOKEN` si cal.
+- `smartgassensor-secrets`: `MQTT_USERNAME`, `MQTT_PASSWORD`, `API_TOKEN` (pot ser buit) i `NTFY_TOKEN` si cal.
 - `ghcr-pull`: tipus `kubernetes.io/dockerconfigjson`, credencial de lectura GHCR.
 
 El script següent demana credencials sense mostrar-les i les envia a Kubernetes per stdin. Revisa el context seleccionat abans de confirmar:
@@ -237,15 +237,15 @@ Substitueix el tag `bootstrap` de `k8s/kustomization.yaml` pel tag o digest real
 
 ```bash
 kubectl apply -k k8s
-kubectl -n smartgas get pods,pvc,svc
-kubectl -n smartgas logs deployment/smartgas -f
+kubectl -n smartgassensor get pods,pvc,svc
+kubectl -n smartgassensor logs deployment/smartgassensor -f
 ```
 
 La NetworkPolicy, si el clúster en té, ha de permetre DNS i sortida TCP al broker, i entrada cap al Service de l’aplicació. Per MQTT TLS, activa `MQTT_TLS`, ajusta el port i, amb una CA privada, munta el certificat i defineix `MQTT_CA_FILE`; no es desactiva la verificació TLS.
 
 ## Backups i actualitzacions
 
-Les lectures i els avisos es desen al PVC `smartgas-data`. Conserva aquest volum durant les actualitzacions i configura snapshots/backups al clúster.
+Les lectures i els avisos es desen al PVC `smartgassensor-data`. Conserva aquest volum durant les actualitzacions i configura snapshots/backups al clúster.
 
 Per fer una còpia coherent d'una SQLite local mentre l'aplicació està activa:
 
@@ -255,7 +255,7 @@ python3 scripts/backup_db.py --source data/smartgas.db --destination backups/sma
 
 En Docker/Kubernetes, executa l'equivalent dins del contenidor amb Python/SQLite o fes snapshots coherents del volum. No copiïs només el `.db` mentre hi ha escriptures al WAL. Per restaurar, atura l'aplicació, conserva una còpia de l'estat actual i restaura el backup al camí configurat amb permisos UID/GID 10001.
 
-Secrets modificats no reinicien automàticament un Pod: després d'actualitzar-los, fes `kubectl -n smartgas rollout restart deployment/smartgas`. El canvi del ConfigMap sí que canvia el nom generat i recrea el Pod.
+Secrets modificats no reinicien automàticament un Pod: després d'actualitzar-los, fes `kubectl -n smartgassensor rollout restart deployment/smartgassensor`. El canvi del ConfigMap sí que canvia el nom generat i recrea el Pod.
 
 ## Desenvolupament i proves
 
