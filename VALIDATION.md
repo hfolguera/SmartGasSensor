@@ -36,3 +36,9 @@ La suite local pot mostrar un avís de deprecació de Starlette sobre httpx al c
 - Dashboard revisat visualment: «Autonomia de combustible», marcador de nivell restant i escala vermell→verd.
 - El servidor ntfy retorna HTTP 403 als avisos de nivell pendents. Cal revisar permisos de publicació al topic o configurar autenticació; els avisos continuen desats per reintentar-los.
 - Backup previ a la migració v3: `/data/smartgas-before-silence-20261101.db`, al volum persistent local.
+
+## Prova amb autenticació ntfy
+
+- `.env.example` inclou `NTFY_USERNAME` i `NTFY_PASSWORD`, amb la prioritat del token documentada.
+- Contenidor recreat amb les credencials del `.env`; salut HTTP 200. Comprovats camps únics i format sense problemes de cometes o espais.
+- Intent real d’enviar «PROVA · Gasoil crític: 10%», amb prioritat 5, nivell fictici i enllaç a la web, mitjançant el mateix client de notificacions de l’aplicació. ntfy ha respost HTTP 401; no s’ha pogut confirmar l’entrega. Cal revisar l’usuari/contrasenya o l’autenticació del servidor.
