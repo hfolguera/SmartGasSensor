@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: smartgas
+spec:
+  # Canvia ingressClassName, host i configuració TLS segons el teu clúster.
+  ingressClassName: nginx
+  rules:
+    - host: smartgas.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: smartgas
+                port:
+                  name: http
+  # tls:
+  #   - hosts: [smartgas.example.com]
+  #     secretName: smartgas-tls

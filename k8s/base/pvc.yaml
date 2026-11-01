@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: smartgas-data
+  annotations:
+    # No eliminar dades automàticament en treure el PVC de Git o l'Application.
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # Omet storageClassName per utilitzar la classe per defecte del clúster.
+  resources:
+    requests:
+      storage: 2Gi

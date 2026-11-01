@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: smartgas
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/hfolguera/SmartGasSensor.git
+    targetRevision: gitops
+    path: k8s/overlays/production
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: smartgas
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

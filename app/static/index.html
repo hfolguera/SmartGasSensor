@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ca">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#14281e">
+  <title>SmartGas · Nivell del dipòsit</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+<header class="topbar"><a class="brand" href="/" aria-label="SmartGas, inici"><span class="brand-icon">S</span> SmartGas<span class="brand-light"> / monitor</span></a><span class="local-label">TELEMETRIA LOCAL</span></header>
+<main>
+  <section class="heading"><div><p class="eyebrow">EL TEU DIPÒSIT, D'UN COP D'ULL</p><h1>Control del gasoil<span>.</span></h1><p class="intro">Nivell, qualitat de lectura i connexió, sense dependre de Home Assistant.</p></div><div class="connection"><span id="broker-dot" class="dot"></span><span id="broker-status">Connectant amb el servidor…</span><button id="refresh" class="icon-button" aria-label="Actualitza les dades">↻</button></div></section>
+  <div id="notice" class="notice" role="status" hidden></div>
+  <form id="login" class="notice login" hidden><label for="token">Token d'accés a l'API</label><input id="token" type="password" autocomplete="off" required><button class="button" type="submit">Accedeix</button><p>El token es conserva només en aquesta sessió del navegador.</p></form>
+  <section id="empty" class="empty" hidden><div class="empty-icon">↝</div><h2>Esperant la primera lectura</h2><p>Quan el sensor publiqui una mesura vàlida de telemetria, apareixerà aquí.</p><code>home/gas/telemetry</code><p class="small">La connexió amb el broker i els permisos de subscripció es mostren a la part superior.</p></section>
+  <section id="dashboard" hidden>
+    <div class="device-toolbar"><div><span class="eyebrow">DISPOSITIU</span><select id="device" aria-label="Selecciona el dipòsit"></select></div><span id="state" class="badge">—</span></div>
+    <div class="overview">
+      <article class="tank-card"><div class="card-top"><h2>Combustible disponible</h2><span id="calibration" class="small">—</span></div><div class="tank-layout"><div class="tank-outline" role="img" aria-label="Nivell estimat de combustible"><div id="tank-fill" class="tank-fill"></div><div class="tank-ticks"><span>100</span><span>50</span><span>0</span></div><span id="tank-percent" class="tank-percent">—</span></div><div class="volume"><p class="eyebrow" id="volume-label">VOLUM ESTIMAT</p><div id="volume" class="big-number">—</div><p id="capacity" class="muted">Cal configurar les dimensions del dipòsit</p><div id="reserve" class="reserve" hidden></div></div></div><p id="reading-note" class="card-note">—</p></article>
+      <div class="stats"><article class="stat-card"><span class="eyebrow">DISTÀNCIA A LA SUPERFÍCIE</span><div id="distance" class="stat-value">—</div><span id="distance-note" class="muted">Mesurada pel sensor</span></article><article class="stat-card"><span class="eyebrow">ÚLTIMA RECEPCIÓ</span><div id="last-seen" class="stat-value compact">—</div><span id="last-date" class="muted">—</span></article><article class="stat-card"><span class="eyebrow">QUALITAT DE LA LECTURA</span><div id="quality" class="stat-value compact">—</div><span id="samples" class="muted">—</span></article><article class="stat-card"><span class="eyebrow">SENYAL WI-FI</span><div id="wifi" class="stat-value">—</div><span id="wifi-note" class="muted">—</span></article></div>
+    </div>
+    <article class="history-card"><div class="card-top"><div><p class="eyebrow">EVOLUCIÓ</p><h2 id="chart-title">Distància al llarg del temps</h2></div><div class="range-buttons" role="group" aria-label="Període del gràfic"><button data-hours="6">6 h</button><button data-hours="24" class="active">24 h</button><button data-hours="168">7 dies</button></div></div><div id="chart" class="chart" aria-label="Històric de lectures"></div><div class="chart-footer"><span id="chart-summary">—</span><span>Hora local · recepció al servidor</span></div></article>
+    <article class="table-card"><div class="card-top"><h2>Últimes lectures</h2><span class="small">Les lectures amb error no es converteixen en zero</span></div><div class="table-scroll"><table><thead><tr><th>Recepció</th><th>Distància</th><th>Volum</th><th>Estat</th><th>Dispersió</th><th>Wi-Fi</th></tr></thead><tbody id="readings"></tbody></table></div></article>
+    <details class="diagnostics"><summary>Diagnòstic del dispositiu i accés a les dades</summary><dl id="diagnostics"></dl><p>API del dispositiu: <code id="api-link"></code></p><p class="small">Bateria: només es mostra si el firmware envia una mesura real. Cap percentatge estimat.</p></details>
+  </section>
+  <footer><span>SmartGasSensor <span class="footer-dot">·</span> Dades locals, decisions informades.</span><span id="updated">Actualització automàtica cada 15 s</span></footer>
+</main>
+</body></html>

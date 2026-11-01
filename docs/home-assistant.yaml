@@ -1,0 +1,44 @@
+# Exemple per configuration.yaml. Canvia URL, device_id i token si l'has activat.
+# Guarda smartgas_authorization a secrets.yaml com "Bearer EL_TEU_TOKEN".
+# Si no tens token, elimina headers. Reinicia/recarrega la integració REST després.
+rest:
+  - resource: http://smartgas.smartgas.svc.cluster.local/api/v1/devices/NodeMCU_ESP32/latest
+    # Si HA no és dins del clúster, utilitza el domini de l'Ingress.
+    headers:
+      Authorization: !secret smartgas_authorization
+    scan_interval: 60
+    timeout: 10
+    sensor:
+      - name: "Gasoil distància"
+        unique_id: smartgas_distance
+        unit_of_measurement: mm
+        device_class: distance
+        state_class: measurement
+        availability: >-
+          {{ not value_json.stale and not value_json.simulated
+             and value_json.measurement_status == 'ok' }}
+        value_template: "{{ value_json.distance_mm }}"
+        json_attributes:
+          - received_at
+          - measurement_status
+          - age_seconds
+          - calibration_status
+      - name: "Gasoil disponible"
+        unique_id: smartgas_volume
+        unit_of_measurement: L
+        device_class: volume_storage
+        state_class: measurement
+        availability: >-
+          {{ not value_json.stale and not value_json.simulated
+             and value_json.measurement_status == 'ok'
+             and value_json.volume_liters is not none }}
+        value_template: "{{ value_json.volume_liters }}"
+      - name: "Gasoil nivell"
+        unique_id: smartgas_fill
+        unit_of_measurement: "%"
+        state_class: measurement
+        availability: >-
+          {{ not value_json.stale and not value_json.simulated
+             and value_json.measurement_status == 'ok'
+             and value_json.fill_percent is not none }}
+        value_template: "{{ value_json.fill_percent }}"

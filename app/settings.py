@@ -1,0 +1,82 @@
+import json
+import os
+from dataclasses import dataclass
+from pathlib import Path
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class Tank(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=120)
+    length_mm: float = Field(gt=0, le=100000)
+    width_mm: float = Field(gt=0, le=100000)
+    height_mm: float = Field(gt=0, le=100000)
+    sensor_to_bottom_mm: float = Field(gt=0, le=100000)
+    reserve_liters: float = Field(default=150, ge=0)
+
+    @property
+    def capacity_liters(self):
+        return self.length_mm * self.width_mm * self.height_mm / 1_000_000
+
+
+def flag(name, default=False):
+    return os.getenv(name, str(default)).lower() in {"true", "1", "yes"}
+
+
+@dataclass(frozen=True)
+class Settings:
+    db_path: str = "./data/smartgas.db"
+    mqtt_enabled: bool = True
+    mqtt_host: str = "192.168.1.216"
+    mqtt_port: int = 1883
+    mqtt_username: str = ""
+    mqtt_password: str = ""
+    mqtt_topic: str = "home/gas/telemetry"
+    mqtt_client_id: str = "smartgas-production"
+    mqtt_tls: bool = False
+    mqtt_ca_file: str = ""
+    tank_config_path: str = "config/tanks.json"
+    stale_after_seconds: int = 3600
+    retention_days: int = 730
+    api_token: str = ""
+
+    @classmethod
+    def from_env(cls):
+        settings = cls(
+            db_path=os.getenv("DB_PATH", "./data/smartgas.db"),
+            mqtt_enabled=flag("MQTT_ENABLED", True),
+            mqtt_host=os.getenv("MQTT_HOST", "192.168.1.216"),
+            mqtt_port=int(os.getenv("MQTT_PORT", "1883")),
+            mqtt_username=os.getenv("MQTT_USERNAME", ""),
+            mqtt_password=os.getenv("MQTT_PASSWORD", ""),
+            mqtt_topic=os.getenv("MQTT_TOPIC", "home/gas/telemetry"),
+            mqtt_client_id=os.getenv("MQTT_CLIENT_ID", "smartgas-production"),
+            mqtt_tls=flag("MQTT_TLS"),
+            mqtt_ca_file=os.getenv("MQTT_CA_FILE", ""),
+            tank_config_path=os.getenv("TANK_CONFIG_PATH", "config/tanks.json"),
+            stale_after_seconds=int(os.getenv("STALE_AFTER_SECONDS", "3600")),
+            retention_days=int(os.getenv("RETENTION_DAYS", "730")),
+            api_token=os.getenv("API_TOKEN", ""),
+        )
+        if not 1 <= settings.mqtt_port <= 65535:
+            raise ValueError("MQTT_PORT fora de rang")
+        if settings.stale_after_seconds < 60 or settings.retention_days < 1:
+            raise ValueError("Intervals de configuració invàlids")
+        if not settings.mqtt_client_id or not settings.mqtt_topic:
+            raise ValueError("Cal MQTT_CLIENT_ID i MQTT_TOPIC")
+        return settings
+
+
+def load_tanks(path: str) -> dict[str, Tank]:
+    # Fitxer absent = error de configuració, no fingir que està calibrat.
+    content = json.loads(Path(path).read_text())
+    if not isinstance(content, dict):
+        raise ValueError("tanks.json ha de ser un objecte per device_id")
+    tanks = {key: Tank.model_validate(value) for key, value in content.items()}
+    for tank in tanks.values():
+        if tank.sensor_to_bottom_mm < tank.height_mm:
+            raise ValueError("sensor_to_bottom_mm ha de ser >= height_mm")
+        if tank.reserve_liters > tank.capacity_liters:
+            raise ValueError("La reserva supera la capacitat calculada")
+    return tanks
