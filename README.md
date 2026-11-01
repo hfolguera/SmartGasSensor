@@ -103,7 +103,7 @@ MQTT_ENABLED=false .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080
 
 `alçada = sensor_to_bottom_mm − distance_mm`. `litres = llargada × amplada × alçada / 1.000.000`. El percentatge és respecte a la capacitat geomètrica calculada. La distància mínima del sensor i la capacitat útil poden limitar l'ompliment real.
 
-Si l'alçada queda fora de `[0, height_mm]`, no es força a zero/ple: es marca error de calibratge. Les lectures originals es conserven i els càlculs es refan en consultar: canviar dimensions permet revisar l'històric. Reinicia l'aplicació després de canviar la configuració local. A Kubernetes edita `k8s/base/tanks.json` a `main`: el canvi del ConfigMap genera una nova versió i recrea el Pod.
+Si l'alçada queda fora de `[0, height_mm]`, no es força a zero/ple: es marca error de calibratge. Les lectures originals es conserven i els càlculs es refan en consultar: canviar dimensions permet revisar l'històric. Reinicia l'aplicació després de canviar la configuració local. A Kubernetes edita `k8s/tanks.json` a `main`: el canvi del ConfigMap genera una nova versió i recrea el Pod.
 
 `received_at` és l'hora UTC de recepció al servidor, no una hora de mesura enviada pel sensor. La web la mostra en hora local. Els missatges acumulats al broker durant una caiguda poden correspondre a mesures anteriors; sense un `measured_at` fiable del firmware no se'n pot saber l'antiguitat física exacta. El timeout de dades s'aplica a la recepció. Amb `STALE_AFTER_SECONDS=3600`, es marquen antigues després d'una hora sense cap nova mostra. Els duplicats no refresquen aquesta hora.
 
@@ -125,7 +125,7 @@ Retenció per defecte: 730 dies. Neteja com a màxim una vegada per hora quan en
 
 La consulta històrica retorna les mostres més recents del període, no agregats. `next_before` permet demanar un tram anterior amb el paràmetre `before` (timestamp Unix). La web mostra les últimes 500 i indica si arriba al límit.
 
-Si `API_TOKEN` no és buit, totes les rutes `/api/v1` requereixen `Authorization: Bearer TOKEN`. La web demana aquest token i el conserva a `sessionStorage`. Les rutes de salut i l'estructura de la web no exposen lectures. No hi ha cap ruta HTTP d'escriptura de telemetria. Per accés fora d'una LAN de confiança, configura TLS i autenticació a l'Ingress o un token API; no publiquis credencials sobre HTTP.
+Si `API_TOKEN` no és buit, totes les rutes `/api/v1` requereixen `Authorization: Bearer TOKEN`. La web demana aquest token i el conserva a `sessionStorage`. Les rutes de salut i l'estructura de la web no exposen lectures. No hi ha cap ruta HTTP d'escriptura de telemetria. Per accés fora d'una LAN de confiança, configura TLS i autenticació al punt d’accés que configuris o un token API; no publiquis credencials sobre HTTP.
 
 Exemple sense token:
 
@@ -206,17 +206,18 @@ La barra **Autonomia de combustible** mostra el combustible restant: vermell (re
 
 ## Kubernetes (desplegament manual)
 
+Els manifests i el calibratge són directament a `k8s/`, sense subdirectoris. Es manté un únic `kustomization.yaml` per generar els ConfigMaps i seleccionar la imatge.
+
 Revisa la configuració abans de desplegar:
 
-- `k8s/overlays/production/ingress.yaml`: host `smartgassensor.calfolguera.freemyip.com`, `ingressClassName: nginx`, TLS segons el clúster.
-- `k8s/base/pvc.yaml`: 2 GiB; omet `storageClassName` per utilitzar la classe per defecte. Afegeix-la si cal.
-- `k8s/base/kustomization.yaml`: IP, port, topic, client ID, retenció i llindar d'antiguitat.
-- `k8s/base/tanks.json`: dimensions reals, quan les tinguis.
+- `k8s/pvc.yaml`: 2 GiB; omet `storageClassName` per utilitzar la classe per defecte. Afegeix-la si cal.
+- `k8s/kustomization.yaml`: IP, port, topic, client ID, retenció i llindar d'antiguitat.
+- `k8s/tanks.json`: dimensions reals, quan les tinguis.
 
 Renderitza localment, sense desplegar:
 
 ```bash
-kubectl kustomize k8s/overlays/production
+kubectl kustomize k8s
 ```
 
 Crea dos secrets al namespace `smartgas`, **fora de Git**:
@@ -232,15 +233,15 @@ python3 scripts/create_secrets.py
 
 Si la imatge és privada, `ghcr-pull` necessita una credencial amb permís de lectura del paquet. Si és pública pots eliminar `imagePullSecrets` del Deployment.
 
-Substitueix el tag `bootstrap` de `k8s/overlays/production/kustomization.yaml` pel tag o digest real de la imatge que vols desplegar. Aplica els manifests manualment:
+Substitueix el tag `bootstrap` de `k8s/kustomization.yaml` pel tag o digest real de la imatge que vols desplegar. Aplica els manifests manualment:
 
 ```bash
-kubectl apply -k k8s/overlays/production
-kubectl -n smartgas get pods,pvc,ingress
+kubectl apply -k k8s
+kubectl -n smartgas get pods,pvc,svc
 kubectl -n smartgas logs deployment/smartgas -f
 ```
 
-La NetworkPolicy, si el clúster en té, ha de permetre DNS i sortida TCP al broker, i entrada des del controlador Ingress. Per MQTT TLS, activa `MQTT_TLS`, ajusta el port i, amb una CA privada, munta el certificat i defineix `MQTT_CA_FILE`; no es desactiva la verificació TLS.
+La NetworkPolicy, si el clúster en té, ha de permetre DNS i sortida TCP al broker, i entrada cap al Service de l’aplicació. Per MQTT TLS, activa `MQTT_TLS`, ajusta el port i, amb una CA privada, munta el certificat i defineix `MQTT_CA_FILE`; no es desactiva la verificació TLS.
 
 ## Backups i actualitzacions
 
@@ -263,7 +264,7 @@ Secrets modificats no reinicien automàticament un Pod: després d'actualitzar-l
 .venv/bin/ruff check .
 .venv/bin/pytest -q
 node --check app/static/app.js
-kubectl kustomize k8s/overlays/production > /tmp/smartgas.yaml
+kubectl kustomize k8s > /tmp/smartgas.yaml
 ```
 
 Les versions directes són a `requirements.in`/`requirements-dev.in`; els `.txt` fixen també dependències transitives. Per actualitzar-les, utilitza `pip-tools` amb Python 3.12 i torna a executar les proves.

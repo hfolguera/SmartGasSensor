@@ -9,7 +9,7 @@ def test_all_yaml_parses():
 
 
 def test_single_writer_and_private_image_pull():
-    deployment = yaml.safe_load(Path("k8s/base/deployment.yaml").read_text())
+    deployment = yaml.safe_load(Path("k8s/deployment.yaml").read_text())
     assert deployment["spec"]["replicas"] == 1
     assert deployment["spec"]["strategy"]["type"] == "Recreate"
     pod = deployment["spec"]["template"]["spec"]
@@ -18,7 +18,7 @@ def test_single_writer_and_private_image_pull():
 
 
 def test_no_placeholder_secret_deployed():
-    resources = yaml.safe_load(Path("k8s/base/kustomization.yaml").read_text())["resources"]
+    resources = yaml.safe_load(Path("k8s/kustomization.yaml").read_text())["resources"]
     assert not any("secret" in name for name in resources)
-    pvc = yaml.safe_load(Path("k8s/base/pvc.yaml").read_text())
+    pvc = yaml.safe_load(Path("k8s/pvc.yaml").read_text())
     assert pvc["spec"]["accessModes"] == ["ReadWriteOnce"]

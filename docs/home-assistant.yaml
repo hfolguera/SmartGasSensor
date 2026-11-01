@@ -3,7 +3,7 @@
 # Si no tens token, elimina headers. Reinicia/recarrega la integració REST després.
 rest:
   - resource: http://smartgas.smartgas.svc.cluster.local/api/v1/devices/NodeMCU_ESP32/latest
-    # Si HA no és dins del clúster, utilitza el domini de l'Ingress.
+    # Si HA no és dins del clúster, utilitza l’adreça pública que hagis configurat.
     headers:
       Authorization: !secret smartgas_authorization
     scan_interval: 60

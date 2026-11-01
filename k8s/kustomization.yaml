@@ -27,3 +27,7 @@ configMapGenerator:
   - name: smartgas-tanks
     files:
       - tanks.json
+images:
+  - name: ghcr.io/hfolguera/smartgassensor
+    newName: ghcr.io/hfolguera/smartgassensor
+    newTag: bootstrap
