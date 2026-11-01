@@ -96,3 +96,26 @@ def test_history_ordering(settings, sample_dict):
         result = client.get("/api/v1/devices/NodeMCU_ESP32/history?limit=2").json()
         assert [r["sample_id"] for r in result["readings"]] == ["sample-3", "sample-4"]
         assert result["next_before"] is not None
+
+
+@pytest.mark.parametrize('distance,percent,liters,clamped', [
+    (50.0, 100, 1000, False),
+    (150.0, 50, 500, False),
+    (250.0, 0, 0, False),
+    (40.0, 100, 1000, True),
+    (260.0, 0, 0, True),
+])
+def test_prototype_two_point_calibration(settings, sample_dict, distance, percent, liters, clamped):
+    from pathlib import Path
+    Path(settings.tank_config_path).write_text(json.dumps({'NodeMCU_ESP32': {
+        'name': 'Prototip', 'full_distance_mm': 50, 'empty_distance_mm': 250,
+        'nominal_capacity_liters': 1000, 'reserve_liters': 150,
+    }}))
+    sample_dict['distance_mm'] = distance
+    with TestClient(create_app(settings)) as client:
+        client.app.state.store.insert(Telemetry.model_validate(sample_dict), 'topic')
+        body = client.get('/api/v1/devices/NodeMCU_ESP32/latest').json()
+        assert body['fill_percent'] == percent
+        assert body['volume_liters'] == liters
+        assert body['calibration_clamped'] is clamped
+        assert body['calibration_mode'] == 'two_point_prototype'

@@ -92,7 +92,7 @@ MQTT_ENABLED=false .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080
 
 ## Calibratge i dades
 
-`config/tanks.json` és `{}` per defecte: no inventem les dimensions del dipòsit de 1.000 L. `config/tanks.example.json` és **només un exemple**, no les dimensions reals. La clau ha de coincidir amb el `device_id` que envia el teu firmware, actualment `NodeMCU_ESP32`.
+`config/tanks.json` i el ConfigMap de Kubernetes porten ara el calibratge provisional del prototip: **50 mm = 100%, 250 mm = 0%**, amb escala nominal de **1.000 L**. El percentatge s’interpola linealment i es limita entre 0 i 100%; `calibration_clamped` indica si la distància era fora de l’interval. Aquests litres són orientatius per al prototip, no un calibratge físic del dipòsit real. Per passar a geometria real, substitueix aquesta configuració pel format següent, sense barrejar els dos modes. `config/tanks.example.json` és **només un exemple**, no les dimensions reals. La clau ha de coincidir amb el `device_id` que envia el teu firmware, actualment `NodeMCU_ESP32`.
 
 | Camp | Significat |
 |---|---|

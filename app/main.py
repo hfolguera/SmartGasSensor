@@ -66,15 +66,26 @@ def create_app(settings: Settings | None = None):
         if tank:
             result.update(name=tank.name, capacity_liters=round(tank.capacity_liters, 2),
                           reserve_liters=tank.reserve_liters, calibration_status="configured")
+            result["calibration_mode"] = "two_point_prototype" if tank.full_distance_mm is not None else "geometry"
+            result["calibration_clamped"] = False
             if row["measurement_status"] == "ok":
-                height = tank.sensor_to_bottom_mm - row["distance_mm"]
-                # Una lectura incompatible amb el dipòsit no es converteix en buit/ple per clamp.
-                if 0 <= height <= tank.height_mm:
-                    volume = tank.length_mm * tank.width_mm * height / 1_000_000
-                    result.update(level_mm=round(height, 1), volume_liters=round(volume, 2),
-                                  fill_percent=round(100 * height / tank.height_mm, 2))
+                if tank.full_distance_mm is not None:
+                    height = tank.empty_distance_mm - row["distance_mm"]
+                    span = tank.empty_distance_mm - tank.full_distance_mm
+                    fraction = max(0.0, min(1.0, height / span))
+                    result.update(level_mm=round(max(0.0, min(span, height)), 1),
+                                  volume_liters=round(tank.capacity_liters * fraction, 2),
+                                  fill_percent=round(100 * fraction, 2),
+                                  calibration_clamped=not 0 <= height <= span)
                 else:
-                    result["calibration_status"] = "out_of_geometry"
+                    height = tank.sensor_to_bottom_mm - row["distance_mm"]
+                    # La geometria real conserva la detecció d'errors sense saturar-la.
+                    if 0 <= height <= tank.height_mm:
+                        volume = tank.length_mm * tank.width_mm * height / 1_000_000
+                        result.update(level_mm=round(height, 1), volume_liters=round(volume, 2),
+                                      fill_percent=round(100 * height / tank.height_mm, 2))
+                    else:
+                        result["calibration_status"] = "out_of_geometry"
         else:
             result["name"] = row["device_id"]
         return result

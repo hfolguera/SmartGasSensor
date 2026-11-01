@@ -32,9 +32,9 @@ function renderDevice(device) {
   unit('volume', display.volume_liters, 'L', 0);
   $('tank-fill').style.height = Math.max(0,Math.min(100,display.fill_percent || 0))+'%';
   $('tank-percent').textContent = display.fill_percent == null ? '—' : number(display.fill_percent,0)+'%';
-  $('capacity').textContent = display.capacity_liters == null ? 'Cal configurar les dimensions del dipòsit' : 'de '+number(display.capacity_liters,0)+' L de capacitat calculada';
-  $('calibration').textContent = device.calibration_status === 'not_configured' ? 'Sense calibrar' : device.calibration_status === 'out_of_geometry' ? 'Fora de geometria' : 'Dipòsit rectangular';
-  $('volume-label').textContent = fallback ? 'ÚLTIM VOLUM VÀLID' : 'VOLUM ESTIMAT';
+  $('capacity').textContent = display.capacity_liters == null ? 'Cal configurar les dimensions del dipòsit' : 'de '+number(display.capacity_liters,0)+(display.calibration_mode === 'two_point_prototype' ? ' L nominals · calibratge provisional' : ' L de capacitat calculada');
+  $('calibration').textContent = device.calibration_status === 'not_configured' ? 'Sense calibrar' : device.calibration_status === 'out_of_geometry' ? 'Fora de geometria' : device.calibration_mode === 'two_point_prototype' ? 'Prototip · 2 punts' : 'Dipòsit rectangular';
+  $('volume-label').textContent = fallback ? 'ÚLTIM VOLUM VÀLID' : device.calibration_mode === 'two_point_prototype' ? 'VOLUM DEL PROTOTIP' : 'VOLUM ESTIMAT';
   $('reserve').hidden = display.volume_liters == null || display.volume_liters > display.reserve_liters;
   $('reserve').textContent = 'Reserva: '+number(display.reserve_liters,0)+' L';
   unit('distance', display.distance_mm, 'mm');
@@ -51,6 +51,7 @@ function renderDevice(device) {
   else if (device.stale) note += 'La lectura és antiga; no representa necessàriament el nivell actual.';
   else if (device.calibration_status === 'not_configured') note += 'La distància és real; els litres estaran disponibles quan configuris el calibratge.';
   else if (device.calibration_status === 'out_of_geometry') note += 'La distància no és compatible amb les dimensions configurades.';
+  else if (device.calibration_mode === 'two_point_prototype') note += 'Calibratge provisional: 5 cm = 100%, 25 cm = 0%. Litres escalats a la capacitat nominal.' + (device.calibration_clamped ? ' Lectura fora de l’interval; percentatge limitat entre 0 i 100%.' : '');
   else note += 'Volum calculat amb les dimensions configurades.';
   $('reading-note').textContent = note;
   const diagnostics = [['Identificador',device.device_id],['Firmware',device.firmware_version],['Sample ID',device.sample_id],['Temps despert fins al JSON',number(device.awake_ms/1000)+' s'],['Bateria',device.battery_mv == null ? 'No mesurada' : number(device.battery_mv,0)+' mV'],['Topic MQTT',device.topic],['Tipus de dada',device.simulated ? 'Simulada' : 'Sensor']];

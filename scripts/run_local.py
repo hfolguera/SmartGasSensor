@@ -50,7 +50,11 @@ def main():
             raise SystemExit("smartgas ja existeix. Utilitza podman start smartgas, o --recreate per aplicar canvis.")
         subprocess.run([podman, "stop", "smartgas"], check=True)
         subprocess.run([podman, "rm", "smartgas"], check=True)
-    subprocess.run([podman, "volume", "create", "smartgas-data"], check=True)
+    volume_exists = subprocess.run([podman, "volume", "exists", "smartgas-data"], check=False).returncode
+    if volume_exists == 1:
+        subprocess.run([podman, "volume", "create", "smartgas-data"], check=True)
+    elif volume_exists != 0:
+        raise SystemExit("No es pot consultar el volum de dades de Podman")
     with tempfile.NamedTemporaryFile(mode="w", prefix="smartgas-env-", delete=False) as file:
         os.chmod(file.name, 0o600)
         file.write(env)

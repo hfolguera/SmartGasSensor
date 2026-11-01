@@ -3,20 +3,43 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Tank(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=120)
-    length_mm: float = Field(gt=0, le=100000)
-    width_mm: float = Field(gt=0, le=100000)
-    height_mm: float = Field(gt=0, le=100000)
-    sensor_to_bottom_mm: float = Field(gt=0, le=100000)
+    length_mm: float | None = Field(default=None, gt=0, le=100000)
+    width_mm: float | None = Field(default=None, gt=0, le=100000)
+    height_mm: float | None = Field(default=None, gt=0, le=100000)
+    sensor_to_bottom_mm: float | None = Field(default=None, gt=0, le=100000)
+    full_distance_mm: float | None = Field(default=None, ge=0, le=100000)
+    empty_distance_mm: float | None = Field(default=None, gt=0, le=100000)
+    nominal_capacity_liters: float | None = Field(default=None, gt=0)
     reserve_liters: float = Field(default=150, ge=0)
+
+    @model_validator(mode="after")
+    def validate_calibration(self):
+        geometry = (self.length_mm, self.width_mm, self.height_mm, self.sensor_to_bottom_mm)
+        endpoints = (self.full_distance_mm, self.empty_distance_mm, self.nominal_capacity_liters)
+        if any(value is not None for value in endpoints):
+            if not all(value is not None for value in endpoints) or any(value is not None for value in geometry):
+                raise ValueError("El calibratge de dos punts requereix els dos extrems i capacitat nominal, sense geometria")
+            if self.empty_distance_mm <= self.full_distance_mm:
+                raise ValueError("La distància de buit ha de superar la de ple")
+        else:
+            if not all(value is not None for value in geometry):
+                raise ValueError("Cal indicar totes les dimensions o un calibratge de dos punts")
+            if self.sensor_to_bottom_mm < self.height_mm:
+                raise ValueError("sensor_to_bottom_mm ha de ser >= height_mm")
+        if self.reserve_liters > self.capacity_liters:
+            raise ValueError("La reserva supera la capacitat calculada")
+        return self
 
     @property
     def capacity_liters(self):
+        if self.nominal_capacity_liters is not None:
+            return self.nominal_capacity_liters
         return self.length_mm * self.width_mm * self.height_mm / 1_000_000
 
 
@@ -74,9 +97,4 @@ def load_tanks(path: str) -> dict[str, Tank]:
     if not isinstance(content, dict):
         raise ValueError("tanks.json ha de ser un objecte per device_id")
     tanks = {key: Tank.model_validate(value) for key, value in content.items()}
-    for tank in tanks.values():
-        if tank.sensor_to_bottom_mm < tank.height_mm:
-            raise ValueError("sensor_to_bottom_mm ha de ser >= height_mm")
-        if tank.reserve_liters > tank.capacity_liters:
-            raise ValueError("La reserva supera la capacitat calculada")
     return tanks
