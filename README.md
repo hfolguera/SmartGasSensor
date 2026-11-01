@@ -41,20 +41,37 @@ La web es vincula només a `127.0.0.1` en Compose. La base de dades queda al vol
 
 ### Amb Podman al teu Mac
 
-La construcció local s'ha comprovat amb el motor Podman que ja tens instal·lat. Si no tens la comanda `docker`/Compose disponible:
+El projecte inclou un launcher que normalitza les cometes de `.env` abans de passar-lo a Podman (el lector `--env-file` de Podman/Docker no té la mateixa semàntica que Compose). Les credencials s'envien amb un fitxer temporal amb permisos 0600 que s'elimina després d'arrencar.
 
 ```bash
-/opt/podman/bin/podman build --format docker -t localhost/smartgassensor:local .
-/opt/podman/bin/podman volume create smartgas-data
-/opt/podman/bin/podman run -d --name smartgas --env-file .env \
-  -p 127.0.0.1:8080:8080 \
-  -v smartgas-data:/data \
-  -v "$PWD/config/tanks.json:/config/tanks.json:ro" \
-  localhost/smartgassensor:local
+python3 scripts/run_local.py --build
 /opt/podman/bin/podman logs -f smartgas
 ```
 
-Si el contenidor `smartgas` ja existeix, revisa'l abans de crear-ne un altre; per tornar-lo a engegar utilitza `podman start smartgas`.
+Si el contenidor ja existeix, `--recreate` aplica la nova imatge/configuració conservant el volum. Per aturar i tornar a arrencar sense canvis:
+
+```bash
+/opt/podman/bin/podman stop smartgas
+/opt/podman/bin/podman start smartgas
+```
+
+#### Si la VM no pot accedir al broker de la LAN
+
+En la prova d'aquest Mac, `192.168.1.216:1883` era accessible des del host però retornava connexió refusada des de la VM de Podman. Per provar localment es pot utilitzar un relay TCP al Mac, escoltant només a loopback. No interpreta MQTT ni registra contrasenyes.
+
+En una terminal, mantén aquest procés actiu:
+
+```bash
+python3 scripts/mqtt_relay.py --target-host 192.168.1.216
+```
+
+En una altra terminal:
+
+```bash
+python3 scripts/run_local.py --relay --recreate
+```
+
+Això només substitueix `MQTT_HOST` i `MQTT_PORT` dins del contenidor local per `host.containers.internal:28883`; `.env` i els manifests de producció continuen apuntant al broker original. El relay i la VM de Podman han d'estar actius perquè entrin lectures. Si el relay s'atura, torna'l a iniciar: l'aplicació es reconnecta automàticament.
 
 ### Sense Docker
 
