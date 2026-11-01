@@ -30,4 +30,4 @@ configMapGenerator:
 images:
   - name: ghcr.io/hfolguera/smartgassensor
     newName: ghcr.io/hfolguera/smartgassensor
-    newTag: bootstrap
+    newTag: latest

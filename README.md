@@ -233,7 +233,7 @@ python3 scripts/create_secrets.py
 
 Si la imatge és privada, `ghcr-pull` necessita una credencial amb permís de lectura del paquet. Si és pública pots eliminar `imagePullSecrets` del Deployment.
 
-Substitueix el tag `bootstrap` de `k8s/kustomization.yaml` pel tag o digest real de la imatge que vols desplegar. Aplica els manifests manualment:
+Els manifests utilitzen `ghcr.io/hfolguera/smartgassensor:latest` amb `imagePullPolicy: Always`. El workflow publica `latest` des de `main`, a més del tag per commit. Aplica els manifests manualment:
 
 ```bash
 kubectl apply -k k8s
