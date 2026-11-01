@@ -17,3 +17,12 @@ La captura `docs/dashboard.png` correspon a una prova amb el sensor de sobretaul
 La compilació multi-arquitectura AMD64/ARM64, la publicació a GHCR i l'execució real de GitHub Actions queden pendents de pujar el repositori i activar el workflow. ArgoCD/Kubernetes no s'han modificat. No s'han publicat credencials al repositori.
 
 La suite local pot mostrar un avís de deprecació de Starlette sobre httpx al client de proves. No afecta les proves ni el client HTTP de producció.
+
+## Notificacions i barra de risc
+
+- 50 proves correctes, incloent llindars, diversos salts en una lectura, histèresi, prioritats 20%/10%/0%, persistència, migració SQLite, simulacions excloses i reintents HTTP.
+- Enviament HTTP verificat amb un servidor ntfy simulat local; no s'han enviat missatges de prova al topic de casa.
+- Salut de `https://ntfy.calfolguera.freemyip.com/v1/health` correcta des del Mac i del contenidor. La confirmació d'un enviament real es registrarà quan es travessi el primer llindar després de la lectura inicial de referència.
+- Entorn local activat amb topic `home-notifications`, web final `https://smartgassensor.calfolguera.freemyip.com` i histèresi de 5 punts.
+- Barra de risc i estat d'avisos revisats al navegador amb lectures reals.
+- Backup previ a la migració: `/data/smartgas-before-ntfy-20261101.db`, al volum persistent local.

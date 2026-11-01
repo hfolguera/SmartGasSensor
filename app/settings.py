@@ -1,7 +1,9 @@
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -63,6 +65,14 @@ class Settings:
     stale_after_seconds: int = 3600
     retention_days: int = 730
     api_token: str = ""
+    ntfy_enabled: bool = False
+    ntfy_server_url: str = "https://ntfy.calfolguera.freemyip.com"
+    ntfy_topic: str = "home-notifications"
+    ntfy_token: str = ""
+    ntfy_username: str = ""
+    ntfy_password: str = ""
+    ntfy_hysteresis_percent: float = 5.0
+    public_web_url: str = "https://smartgassensor.calfolguera.freemyip.com"
 
     @classmethod
     def from_env(cls):
@@ -81,6 +91,14 @@ class Settings:
             stale_after_seconds=int(os.getenv("STALE_AFTER_SECONDS", "3600")),
             retention_days=int(os.getenv("RETENTION_DAYS", "730")),
             api_token=os.getenv("API_TOKEN", ""),
+            ntfy_enabled=flag("NTFY_ENABLED"),
+            ntfy_server_url=os.getenv("NTFY_SERVER_URL", "https://ntfy.calfolguera.freemyip.com"),
+            ntfy_topic=os.getenv("NTFY_TOPIC", "home-notifications"),
+            ntfy_token=os.getenv("NTFY_TOKEN", ""),
+            ntfy_username=os.getenv("NTFY_USERNAME", ""),
+            ntfy_password=os.getenv("NTFY_PASSWORD", ""),
+            ntfy_hysteresis_percent=float(os.getenv("NTFY_HYSTERESIS_PERCENT", "5")),
+            public_web_url=os.getenv("PUBLIC_WEB_URL", "https://smartgassensor.calfolguera.freemyip.com"),
         )
         if not 1 <= settings.mqtt_port <= 65535:
             raise ValueError("MQTT_PORT fora de rang")
@@ -88,6 +106,14 @@ class Settings:
             raise ValueError("Intervals de configuració invàlids")
         if not settings.mqtt_client_id or not settings.mqtt_topic:
             raise ValueError("Cal MQTT_CLIENT_ID i MQTT_TOPIC")
+        for url in (settings.ntfy_server_url, settings.public_web_url):
+            parsed = urlparse(url)
+            if parsed.scheme not in ("https", "http") or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:
+                raise ValueError("URL pública/ntfy invàlida; les credencials van en variables separades")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", settings.ntfy_topic):
+            raise ValueError("NTFY_TOPIC invàlid")
+        if not 0 < settings.ntfy_hysteresis_percent <= 10:
+            raise ValueError("NTFY_HYSTERESIS_PERCENT ha d'estar entre 0 i 10")
         return settings
 
 

@@ -9,7 +9,9 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.calibration import calibrated_values
 from app.mqtt_service import MqttService
+from app.notifications import NotificationPolicy, NotificationSender
 from app.settings import Settings, load_tanks
 from app.store import Store
 
@@ -27,13 +29,17 @@ def create_app(settings: Settings | None = None):
     async def lifespan(app):
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
         app.state.tanks = load_tanks(settings.tank_config_path)
-        app.state.store = Store(settings.db_path, settings.retention_days)
+        policy = NotificationPolicy(settings, app.state.tanks) if settings.ntfy_enabled else None
+        app.state.store = Store(settings.db_path, settings.retention_days, policy)
+        app.state.notifications = NotificationSender(settings, app.state.store)
+        app.state.notifications.start()
         app.state.mqtt = MqttService(settings, app.state.store)
         app.state.mqtt.start()
         try:
             yield
         finally:
             app.state.mqtt.stop()
+            app.state.notifications.stop()
             app.state.store.close()
 
     app = FastAPI(title="SmartGasSensor API", version="1.0.0", lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -64,28 +70,7 @@ def create_app(settings: Settings | None = None):
         tank = app.state.tanks.get(row["device_id"])
         result.update(volume_liters=None, fill_percent=None, level_mm=None, calibration_status="not_configured")
         if tank:
-            result.update(name=tank.name, capacity_liters=round(tank.capacity_liters, 2),
-                          reserve_liters=tank.reserve_liters, calibration_status="configured")
-            result["calibration_mode"] = "two_point_prototype" if tank.full_distance_mm is not None else "geometry"
-            result["calibration_clamped"] = False
-            if row["measurement_status"] == "ok":
-                if tank.full_distance_mm is not None:
-                    height = tank.empty_distance_mm - row["distance_mm"]
-                    span = tank.empty_distance_mm - tank.full_distance_mm
-                    fraction = max(0.0, min(1.0, height / span))
-                    result.update(level_mm=round(max(0.0, min(span, height)), 1),
-                                  volume_liters=round(tank.capacity_liters * fraction, 2),
-                                  fill_percent=round(100 * fraction, 2),
-                                  calibration_clamped=not 0 <= height <= span)
-                else:
-                    height = tank.sensor_to_bottom_mm - row["distance_mm"]
-                    # La geometria real conserva la detecció d'errors sense saturar-la.
-                    if 0 <= height <= tank.height_mm:
-                        volume = tank.length_mm * tank.width_mm * height / 1_000_000
-                        result.update(level_mm=round(height, 1), volume_liters=round(volume, 2),
-                                      fill_percent=round(100 * height / tank.height_mm, 2))
-                    else:
-                        result["calibration_status"] = "out_of_geometry"
+            result.update(calibrated_values(tank, row["distance_mm"] if row["measurement_status"] == "ok" else None))
         else:
             result["name"] = row["device_id"]
         return result
@@ -119,7 +104,8 @@ def create_app(settings: Settings | None = None):
         mqtt = app.state.mqtt.status()
         mqtt["last_message_at"] = iso(mqtt["last_message_at"])
         return {"server_time": iso(time.time()), "mqtt": mqtt,
-                "stale_after_seconds": settings.stale_after_seconds, "retention_days": settings.retention_days}
+                "stale_after_seconds": settings.stale_after_seconds, "retention_days": settings.retention_days,
+                "notifications": {"enabled": settings.ntfy_enabled, **app.state.store.notification_summary()}}
 
     @app.get("/api/v1/devices", dependencies=[Depends(authorize)])
     def devices():
@@ -158,6 +144,16 @@ def create_app(settings: Settings | None = None):
         readings = app.state.store.history(device_id, time.time() - hours * 3600, limit, before)
         return {"readings": [decorate(row) for row in readings], "limit": limit,
                 "next_before": readings[0]["received_at"] if len(readings) == limit else None}
+
+    @app.get("/api/v1/notifications", dependencies=[Depends(authorize)])
+    def notifications(limit: int = Query(default=20, ge=1, le=100)):
+        events = app.state.store.notifications(limit)
+        for event in events:
+            event["created_at"] = iso(event["created_at"])
+            event["sent_at"] = iso(event["sent_at"])
+        return {"enabled": settings.ntfy_enabled, "topic": settings.ntfy_topic,
+                "web_url": settings.public_web_url, "hysteresis_percent": settings.ntfy_hysteresis_percent,
+                **app.state.store.notification_summary(), "events": events}
 
     @app.get("/api/v1/metrics", dependencies=[Depends(authorize)], response_class=PlainTextResponse)
     def metrics():

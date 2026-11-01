@@ -29,6 +29,7 @@ function renderDevice(device) {
   $('state').className = 'badge' + (['sensor_error','calibration_error'].includes(device.state) ? ' error' : device.state !== 'ok' ? ' warning' : '');
   const fallback = device.measurement_status !== 'ok' && device.last_valid;
   const display = fallback || device;
+  renderRisk(device, display, fallback);
   unit('volume', display.volume_liters, 'L', 0);
   $('tank-fill').style.height = Math.max(0,Math.min(100,display.fill_percent || 0))+'%';
   $('tank-percent').textContent = display.fill_percent == null ? '—' : number(display.fill_percent,0)+'%';
@@ -59,6 +60,29 @@ function renderDevice(device) {
   for (const [key,value] of diagnostics) { const dt=document.createElement('dt'),dd=document.createElement('dd'); dt.textContent=key;dd.textContent=value;$('diagnostics').append(dt,dd); }
   $('api-link').textContent='/api/v1/devices/'+encodeURIComponent(device.device_id)+'/latest';
 }
+function renderRisk(device, display, fallback) {
+  const percent=display.fill_percent, known=percent != null, risk=known?Math.max(0,Math.min(100,100-percent)):null;
+  $('risk-marker').hidden=!known;
+  $('risk-meter').classList.toggle('unknown',!known);
+  if(!known){$('risk-label').textContent='Sense dades';$('risk-meter').removeAttribute('aria-valuenow');$('risk-meter').setAttribute('aria-valuetext','Sense nivell calibrat');$('risk-note').textContent='Cal una lectura vàlida i calibrada.';return;}
+  const label=percent<=10?'Crític':percent<=20?'Alt':percent<=50?'Moderat':'Baix';
+  $('risk-label').textContent=label+' · '+number(percent)+'% restant';
+  $('risk-marker').style.left=risk+'%';
+  $('risk-meter').setAttribute('aria-valuenow',String(risk));
+  $('risk-meter').setAttribute('aria-valuetext',label+', '+number(percent)+'% restant');
+  $('risk-note').textContent=device.simulated?'Simulació: no genera notificacions.':fallback||device.stale?'Risc segons l’últim nivell vàlid; comprova l’antiguitat de la lectura.':'Risc orientatiu segons el nivell; avisos reforçats al 20% i al 10%.';
+}
+function renderNotifications(data) {
+  $('notification-status').textContent=!data.enabled?'Desactivats':data.last_error?'Reintent pendent':data.pending?'Enviament pendent':'Actius';
+  $('notification-status').className='badge'+(data.last_error?' error':data.pending?' warning':'');
+  $('notification-summary').textContent='ntfy / '+data.topic+' · '+data.sent+' enviats · '+data.pending+' pendents. '+(data.last_error?'Últim error: '+data.last_error+'. ':'')+'Prioritat alta al 20% i urgent al 10%. Obrir un avís porta a la web final.';
+  $('notification-events').replaceChildren();
+  for(const event of data.events.slice(0,5)){
+    const row=document.createElement('div'),content=document.createElement('div'),title=document.createElement('strong'),info=document.createElement('p'),badge=document.createElement('span');
+    row.className='notification-event';title.textContent=event.title;info.textContent=date(event.created_at)+' · '+event.device_id+' · '+event.attempts+' intents';badge.className='badge'+(event.priority>=4?' warning':'');badge.textContent={sent:'Enviat',pending:'Pendent',cancelled:'Cancel·lat'}[event.status]||event.status;content.append(title,info);row.append(content,badge);$('notification-events').append(row);
+  }
+  if(!data.events.length){const text=document.createElement('p');text.className='muted';text.textContent='Encara no hi ha avisos. La primera lectura fixa el nivell de referència; després s’avisa en travessar cada llindar cap avall.';$('notification-events').append(text);}
+}
 function svgNode(tag,attrs={},text='') { const node=document.createElementNS('http://www.w3.org/2000/svg',tag); for(const [key,value] of Object.entries(attrs)) node.setAttribute(key,value); if(text)node.textContent=text; return node; }
 function renderChart(rows) {
   const box=$('chart');box.replaceChildren();
@@ -85,7 +109,8 @@ function renderTable(rows){$('readings').replaceChildren();for(const row of rows
 async function update(){
   if(updating)return;updating=true;$('refresh').disabled=true;
   try{
-    const [status,data]=await Promise.all([api('status'),api('devices')]);
+    const [status,data,notifications]=await Promise.all([api('status'),api('devices'),api('notifications')]);
+    renderNotifications(notifications);
     const connected=status.mqtt.connected&&status.mqtt.subscribed;
     $('broker-dot').className='dot'+(connected?' online':' error');
     $('broker-status').textContent=!status.mqtt.enabled?'MQTT desactivat':connected?'MQTT connectat':'MQTT desconnectat o sense subscripció';

@@ -6,7 +6,7 @@ spec:
   # Canvia ingressClassName, host i configuració TLS segons el teu clúster.
   ingressClassName: nginx
   rules:
-    - host: smartgas.example.com
+    - host: smartgassensor.calfolguera.freemyip.com
       http:
         paths:
           - path: /
@@ -17,5 +17,5 @@ spec:
                 port:
                   name: http
   # tls:
-  #   - hosts: [smartgas.example.com]
+  #   - hosts: [smartgassensor.calfolguera.freemyip.com]
   #     secretName: smartgas-tls

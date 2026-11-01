@@ -117,6 +117,7 @@ Retenció per defecte: 730 dies. Neteja com a màxim una vegada per hora quan en
 | `GET /api/v1/devices` | Últim estat de cada dispositiu i `last_valid` |
 | `GET /api/v1/devices/{device_id}/latest` | Estat d'un dispositiu |
 | `GET /api/v1/devices/{device_id}/history?hours=24&limit=500` | Històric, ordre cronològic, màxim 5.000 mostres per consulta |
+| `GET /api/v1/notifications` | Avisos enviats/pendents, llindars, intents i estat ntfy |
 | `GET /api/v1/metrics` | Mètriques en format Prometheus |
 | `GET /openapi.json` | Esquema OpenAPI |
 | `GET /health/live` | Liveness; falla si hi ha hagut un error de persistència que requereix reinici |
@@ -143,6 +144,37 @@ Un missatge duplicat es descarta per `(device_id, sample_id)` i es confirma. Un 
 Si falla una escriptura SQLite, el missatge no es confirma, la connexió es tanca i la liveness falla per forçar el reinici al clúster. En execució local cal revisar el disc i reiniciar el procés; Docker no reinicia automàticament un contenidor només perquè estigui `unhealthy`. La reconnexió de xarxa ordinària sí que és automàtica.
 
 La base de dades conserva les dades en reiniciar el procés o recrear el contenidor si es manté el volum. SQLite requereix un volum que suporti correctament locking i WAL, preferiblement bloc/local; no assumeixis que qualsevol NFS és adequat. No escalis `replicas` ni workers per damunt d'1. Per HA/múltiples rèpliques cal separar ingestió i migrar a PostgreSQL.
+
+## Notificacions ntfy i risc d’esgotament
+
+L’aplicació avisa quan una **nova lectura real i vàlida** travessa cap avall els llindars **90%, 80%, …, 20%, 10% i 0%**. Si una lectura salta diversos llindars, genera un avís per cadascun. No es generen avisos amb simulacions, errors del sensor ni lectures sense calibratge vàlid.
+
+- Del 90% al 30%: prioritat ntfy normal (`3`).
+- Al 20%: text de reserva baixa i prioritat alta (`4`).
+- Al 10% i 0%: text crític i prioritat urgent (`5`). El so final depèn de la configuració del client ntfy.
+- La primera lectura després d’habilitar els avisos estableix la referència: no s’envien tots els llindars històrics.
+- Un llindar notificat es reactiva després d’un ascens d’almenys **5 punts** sobre seu. Per exemple, després d’avisar al 90%, no es repeteix fins que el nivell arriba al 95% i torna a baixar al 90%.
+- En canviar el calibratge s’estableix una nova referència i es cancel·len els avisos pendents del calibratge anterior. Una recuperació de nivell també cancel·la els avisos pendents dels llindars que ja s’han superat amb el marge de reactivació.
+
+Configuració local a `.env` i de Kubernetes al ConfigMap:
+
+```dotenv
+NTFY_ENABLED=true
+NTFY_SERVER_URL=https://ntfy.calfolguera.freemyip.com
+NTFY_TOPIC=home-notifications
+NTFY_HYSTERESIS_PERCENT=5
+PUBLIC_WEB_URL=https://smartgassensor.calfolguera.freemyip.com
+```
+
+Si el servidor requereix autenticació, afegeix `NTFY_TOKEN` al `.env` local o al Secret `smartgas-secrets`; alternativament `NTFY_USERNAME` i `NTFY_PASSWORD`. No es guarden tokens al repositori ni es retornen per l’API. El script `create_secrets.py` admet el token ntfy opcional. El client comprova TLS i no segueix redireccions amb credencials.
+
+Els missatges contenen nivell, litres estimats, un text segons urgència, un **enllaç directe** i el botó **Veure evolució** cap a `PUBLIC_WEB_URL`. El calibratge provisional s’indica al missatge. Subscriu el teu client ntfy al servidor indicat i al topic `home-notifications`.
+
+La lectura, l’estat dels llindars i la cua d’avisos es desen en una mateixa transacció SQLite abans de confirmar MQTT. Un fil independent fa els enviaments HTTP: si ntfy falla, la ingestió continua i els avisos es reintenten amb espera creixent, entre 30 segons i una hora. Els pendents sobreviuen als reinicis. Es conserva l’històric d’avisos segons la retenció configurada. Com en qualsevol entrega HTTP sense clau d’idempotència del receptor, una caiguda entre l’acceptació d’ntfy i el registre de la confirmació pot causar una repetició puntual.
+
+La barra **Risc d’esgotament** va de verd (més reserva, risc baix) a vermell (menys reserva, risc crític), amb marcador i text accessible. És una classificació basada en el nivell, no una predicció de dies d’autonomia. Si la lectura és antiga o correspon a l’últim valor vàlid després d’un error, la web ho indica.
+
+`GET /api/v1/notifications` mostra configuració no sensible, comptadors, últims avisos, intents i errors. `GET /api/v1/status` inclou un resum. Una resposta HTTP 401/403 d’ntfy es mostra com a reintent pendent: cal configurar les credencials abans que els avisos puguin entregar-se.
 
 ## GitHub i GHCR
 
@@ -177,7 +209,7 @@ Les promocions estan serialitzades i una compilació d'un commit que ja no és e
 
 Edita abans del primer push:
 
-- `k8s/overlays/production/ingress.yaml`: host `smartgas.example.com`, `ingressClassName: nginx`, TLS segons el clúster.
+- `k8s/overlays/production/ingress.yaml`: host `smartgassensor.calfolguera.freemyip.com`, `ingressClassName: nginx`, TLS segons el clúster.
 - `k8s/base/pvc.yaml`: 2 GiB; omet `storageClassName` per utilitzar la classe per defecte. Afegeix-la si cal.
 - `k8s/base/kustomization.yaml`: IP, port, topic, client ID, retenció i llindar d'antiguitat.
 - `k8s/base/tanks.json`: dimensions reals, quan les tinguis.
@@ -191,7 +223,7 @@ kubectl kustomize k8s/overlays/production
 
 Crea dos secrets al namespace `smartgas`, **fora de Git**:
 
-- `smartgas-secrets`: `MQTT_USERNAME`, `MQTT_PASSWORD`, `API_TOKEN` (pot ser buit).
+- `smartgas-secrets`: `MQTT_USERNAME`, `MQTT_PASSWORD`, `API_TOKEN` (pot ser buit) i `NTFY_TOKEN` si cal.
 - `ghcr-pull`: tipus `kubernetes.io/dockerconfigjson`, credencial de lectura GHCR.
 
 El script següent demana credencials sense mostrar-les i les envia a Kubernetes per stdin. Revisa el context seleccionat abans de confirmar:

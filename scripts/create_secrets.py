@@ -19,6 +19,7 @@ if __name__ == "__main__":
     mqtt_user = input("Usuari MQTT [mosquitto]: ").strip() or "mosquitto"
     mqtt_password = getpass.getpass("Contrasenya MQTT: ")
     api_token = getpass.getpass("Token API (buit = sense autenticació pròpia): ")
+    ntfy_token = getpass.getpass("Token ntfy (buit si no cal autenticació): ")
     ghcr_user = input("Usuari GHCR [hfolguera]: ").strip() or "hfolguera"
     ghcr_token = getpass.getpass("Token GHCR amb read:packages: ")
     if not ghcr_token:
@@ -26,7 +27,7 @@ if __name__ == "__main__":
     apply({"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "smartgas"}})
     apply({"apiVersion": "v1", "kind": "Secret", "type": "Opaque",
            "metadata": {"name": "smartgas-secrets", "namespace": "smartgas"},
-           "stringData": {"MQTT_USERNAME": mqtt_user, "MQTT_PASSWORD": mqtt_password, "API_TOKEN": api_token}})
+           "stringData": {"MQTT_USERNAME": mqtt_user, "MQTT_PASSWORD": mqtt_password, "API_TOKEN": api_token, "NTFY_TOKEN": ntfy_token}})
     auth = base64.b64encode(f"{ghcr_user}:{ghcr_token}".encode()).decode()
     docker_config = json.dumps({"auths": {"ghcr.io": {"auth": auth}}})
     apply({"apiVersion": "v1", "kind": "Secret", "type": "kubernetes.io/dockerconfigjson",

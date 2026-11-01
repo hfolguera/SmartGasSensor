@@ -19,6 +19,11 @@ configMapGenerator:
       - TANK_CONFIG_PATH=/config/tanks.json
       - STALE_AFTER_SECONDS=3600
       - RETENTION_DAYS=730
+      - NTFY_ENABLED=true
+      - NTFY_SERVER_URL=https://ntfy.calfolguera.freemyip.com
+      - NTFY_TOPIC=home-notifications
+      - NTFY_HYSTERESIS_PERCENT=5
+      - PUBLIC_WEB_URL=https://smartgassensor.calfolguera.freemyip.com
   - name: smartgas-tanks
     files:
       - tanks.json
