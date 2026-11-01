@@ -4,12 +4,12 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#14281e">
   <title>SmartGas · Nivell del dipòsit</title>
-  <link rel="icon" href="data:,">
+  <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/app.js" defer></script>
 </head>
 <body>
-<header class="topbar"><a class="brand" href="/" aria-label="SmartGas, inici"><span class="brand-icon">S</span> SmartGas<span class="brand-light"> / monitor</span></a><span class="local-label">TELEMETRIA LOCAL</span></header>
+<header class="topbar"><a class="brand" href="/" aria-label="SmartGas, inici"><img class="brand-icon" src="/static/icon.svg" width="32" height="32" alt="" aria-hidden="true"> SmartGas<span class="brand-light"> / monitor</span></a><span class="local-label">TELEMETRIA LOCAL</span></header>
 <main>
   <section class="heading"><div><p class="eyebrow">EL TEU DIPÒSIT, D'UN COP D'ULL</p><h1>Control del gasoil<span>.</span></h1><p class="intro">Nivell, qualitat de lectura i connexió, sense dependre de Home Assistant.</p></div><div class="connection"><span id="broker-dot" class="dot"></span><span id="broker-status">Connectant amb el servidor…</span><button id="refresh" class="icon-button" aria-label="Actualitza les dades">↻</button></div></section>
   <div id="notice" class="notice" role="status" hidden></div>

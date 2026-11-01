@@ -6,7 +6,7 @@ Monitor local del dipòsit de gasoil: rep el JSON MQTT del NodeMCU ESP8266, el d
 ESP8266 → Mosquitto → SmartGasSensor (MQTT + FastAPI) → SQLite/PVC
                                   ├→ navegador
                                   └→ API / Home Assistant
-main → GitHub Actions → GHCR privat → branca gitops → ArgoCD → Kubernetes
+main → GitHub Actions → GHCR → branca gitops → ArgoCD → Kubernetes
 ```
 
 ## Què inclou
@@ -144,14 +144,14 @@ Si falla una escriptura SQLite, el missatge no es confirma, la connexió es tanc
 
 La base de dades conserva les dades en reiniciar el procés o recrear el contenidor si es manté el volum. SQLite requereix un volum que suporti correctament locking i WAL, preferiblement bloc/local; no assumeixis que qualsevol NFS és adequat. No escalis `replicas` ni workers per damunt d'1. Per HA/múltiples rèpliques cal separar ingestió i migrar a PostgreSQL.
 
-## GitHub i GHCR privat
+## GitHub i GHCR
 
-1. Crea **un repositori GitHub privat** anomenat `SmartGasSensor` a `hfolguera`.
+1. Crea un repositori GitHub, públic o privat, anomenat `SmartGasSensor` a `hfolguera`.
 2. Puja aquest projecte a la branca `main`. No afegeixis secrets amb `git add -f`.
 3. A GitHub comprova que Actions està habilitat i que les polítiques permeten `packages: write` i `contents: write` als jobs que ho declaren. La branca `gitops` ha de permetre el push del bot; la protecció de `main` pot mantenir-se.
 4. El workflow es dispara a cada push a qualsevol branca excepte `gitops`; les PR només fan proves/build sense publicar. `main` promociona la imatge per ArgoCD. Publica `sha-<commit complet>` per a `linux/amd64` i `linux/arm64`, amb SBOM i provenance.
 5. Fa login a GHCR amb `GITHUB_TOKEN`; **no cal guardar cap PAT d'escriptura** com a secret d'Actions.
-6. Abans de publicar comprova que un paquet existent sigui privat i ho torna a verificar després. Un paquet nou es crea privat per defecte. Si un paquet existent és públic/internal, el workflow falla: cal corregir-lo a GitHub abans de publicar. La visibilitat és propietat del paquet, no una opció del Dockerfile.
+6. La publicació no està condicionada a la visibilitat del repositori ni del paquet: publica tant si és públic com privat. El workflow no canvia la visibilitat de GHCR; es gestiona a GitHub. Les PR continuen fent build sense publicar. `.env`, credencials i dades locals continuen exclosos de Git i del context de la imatge.
 
 ```bash
 git remote add origin https://github.com/hfolguera/SmartGasSensor.git
