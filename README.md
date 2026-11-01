@@ -194,7 +194,7 @@ NTFY_HYSTERESIS_PERCENT=5
 PUBLIC_WEB_URL=https://smartgassensor.calfolguera.freemyip.com
 ```
 
-Si el servidor requereix autenticació, afegeix `NTFY_TOKEN` al `.env` local o al Secret `smartgassensor-secrets`; alternativament `NTFY_USERNAME` i `NTFY_PASSWORD`. No es guarden tokens al repositori ni es retornen per l’API. El script `create_secrets.py` admet el token ntfy opcional. El client comprova TLS i no segueix redireccions amb credencials.
+Si el servidor requereix autenticació, afegeix `NTFY_TOKEN` al `.env` local o al Secret `smartgassensor-secrets`; alternativament `NTFY_USERNAME` i `NTFY_PASSWORD`. No es guarden tokens al repositori ni es retornen per l’API. El script `create_secrets.py` demana un token ntfy opcional; si el deixes buit, permet indicar usuari i contrasenya. Per autenticació bàsica, `NTFY_TOKEN` ha de quedar buit perquè el token té prioritat. Després de modificar el Secret, reinicia el Deployment per carregar les credencials. El client comprova TLS i no segueix redireccions amb credencials.
 
 Els missatges contenen nivell, litres estimats, un text segons urgència, un **enllaç directe** i el botó **Veure evolució** cap a `PUBLIC_WEB_URL`. El calibratge provisional s’indica al missatge. Subscriu el teu client ntfy al servidor indicat i al topic `home-notifications`.
 
@@ -222,7 +222,7 @@ kubectl kustomize k8s
 
 Crea dos secrets al namespace `smartgassensor`, **fora de Git**:
 
-- `smartgassensor-secrets`: `MQTT_USERNAME`, `MQTT_PASSWORD`, `API_TOKEN` (pot ser buit) i `NTFY_TOKEN` si cal.
+- `smartgassensor-secrets`: `MQTT_USERNAME`, `MQTT_PASSWORD`, `API_TOKEN` (pot ser buit) i les credencials ntfy: `NTFY_USERNAME`/`NTFY_PASSWORD` amb `NTFY_TOKEN` buit, o bé `NTFY_TOKEN`.
 - `ghcr-pull`: tipus `kubernetes.io/dockerconfigjson`, credencial de lectura GHCR.
 
 El script següent demana credencials sense mostrar-les i les envia a Kubernetes per stdin. Revisa el context seleccionat abans de confirmar:
