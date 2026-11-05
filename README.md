@@ -92,16 +92,33 @@ MQTT_ENABLED=false .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080
 
 ## Calibratge i dades
 
-`config/tanks.json` i el ConfigMap de Kubernetes porten ara el calibratge provisional del prototip: **50 mm = 100%, 250 mm = 0%**, amb escala nominal de **1.000 L**. El percentatge s’interpola linealment i es limita entre 0 i 100%; `calibration_clamped` indica si la distància era fora de l’interval. Aquests litres són orientatius per al prototip, no un calibratge físic del dipòsit real. Per passar a geometria real, substitueix aquesta configuració pel format següent, sense barrejar els dos modes. `config/tanks.example.json` és **només un exemple**, no les dimensions reals. La clau ha de coincidir amb el `device_id` que envia el teu firmware, actualment `NodeMCU_ESP32`.
+`config/tanks.json`, `config/tanks.example.json` i `k8s/tanks.json` configuren el dipòsit instal·lat, identificat pel firmware com `NodeMCU_ESP32`:
+
+- Amplada aproximada: **110 cm**; fons: **80 cm**; alçada: **160 cm**.
+- Capacitat nominal: **1.000 L**; reserva: **150 L**.
+- Distància del sensor al nivell màxim: **14 cm**.
+- Distància estimada al fons: **174 cm**, assumint que els 160 cm corresponen a l’alçada útil.
+
+Les dimensions donen **1.408 L geomètrics**, que no coincideixen amb els 1.000 L nominals. Per això s’utilitza `calibration_mode=geometry_nominal`: el volum s’escala linealment entre 0 i 1.000 L, en lloc de considerar que el dipòsit pot contenir 1.408 L. Les dimensions són aproximades i cal validar la distància al buit i el calibratge amb un nivell conegut. No és una taula volumètrica del fabricant.
 
 | Camp | Significat |
 |---|---|
-| `name` | Nom visible a la web |
-| `length_mm`, `width_mm`, `height_mm` | Dimensions interiors del volum rectangular |
-| `sensor_to_bottom_mm` | Distància del pla de mesura del sensor al fons |
-| `reserve_liters` | Llindar de reserva |
+| `length_mm`, `width_mm`, `height_mm` | Dimensions aproximades; 1100 × 800 × 1600 mm |
+| `sensor_to_bottom_mm` | Distància estimada del sensor al fons: 1740 mm |
+| `nominal_capacity_liters` | Capacitat utilitzada per als litres: 1000 L |
+| `reserve_liters` | Llindar de reserva: 150 L |
 
-`alçada = sensor_to_bottom_mm − distance_mm`. `litres = llargada × amplada × alçada / 1.000.000`. El percentatge és respecte a la capacitat geomètrica calculada. La distància mínima del sensor i la capacitat útil poden limitar l'ompliment real.
+`alçada = 1740 − distance_mm`. `percentatge = 100 × alçada / 1600`. `litres = 1000 × alçada / 1600`.
+
+| Distància sensor-superfície | Nivell | Litres estimats |
+|---|---:|---:|
+| 14 cm | 100% | 1000 L |
+| 54 cm | 75% | 750 L |
+| 94 cm | 50% | 500 L |
+| 134 cm | 25% | 250 L |
+| 174 cm | 0% | 0 L |
+
+Si s’omet `nominal_capacity_liters`, s’utilitza el volum geomètric rectangular. També es manté el calibratge antic de dos punts (`full_distance_mm`, `empty_distance_mm` i capacitat nominal, sense dimensions) per compatibilitat, però no és el mode del dipòsit instal·lat. La web mostra els extrems configurats, sense distàncies fixes del prototip.
 
 Si l'alçada queda fora de `[0, height_mm]`, no es força a zero/ple: es marca error de calibratge. Les lectures originals es conserven i els càlculs es refan en consultar: canviar dimensions permet revisar l'històric. Reinicia l'aplicació després de canviar la configuració local. A Kubernetes edita `k8s/tanks.json` a `main`: el canvi del ConfigMap genera una nova versió i recrea el Pod.
 

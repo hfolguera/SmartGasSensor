@@ -83,6 +83,8 @@ class NotificationPolicy:
                    f"Nivell actual: {values['fill_percent']:.1f}% · {values['volume_liters']:.1f} L.\n{advice}")
         if values["calibration_mode"] == "two_point_prototype":
             message += "\nCalibratge provisional del prototip; litres orientatius."
+        elif values["calibration_mode"] == "geometry_nominal":
+            message += "\nVolum estimat a partir de la capacitat nominal i dimensions aproximades."
         message += f"\nVeure l'evolució: {self.settings.public_web_url}"
         return {"topic": self.settings.ntfy_topic, "title": title, "message": message,
                 "priority": priority, "tags": tags, "click": self.settings.public_web_url,

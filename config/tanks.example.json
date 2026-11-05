@@ -1,10 +1,11 @@
 {
   "NodeMCU_ESP32": {
     "name": "Dipòsit de gasoil",
-    "length_mm": 1000,
-    "width_mm": 1000,
-    "height_mm": 1000,
-    "sensor_to_bottom_mm": 1050,
+    "length_mm": 1100,
+    "width_mm": 800,
+    "height_mm": 1600,
+    "sensor_to_bottom_mm": 1740,
+    "nominal_capacity_liters": 1000,
     "reserve_liters": 150
   }
 }

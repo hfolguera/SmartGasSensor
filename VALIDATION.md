@@ -42,3 +42,10 @@ La suite local pot mostrar un avís de deprecació de Starlette sobre httpx al c
 - `.env.example` inclou `NTFY_USERNAME` i `NTFY_PASSWORD`, amb la prioritat del token documentada.
 - Contenidor recreat amb les credencials del `.env`; salut HTTP 200. Comprovats camps únics i format sense problemes de cometes o espais.
 - Intent real d’enviar «PROVA · Gasoil crític: 10%», amb prioritat 5, nivell fictici i enllaç a la web, mitjançant el mateix client de notificacions de l’aplicació. ntfy ha respost HTTP 401; no s’ha pogut confirmar l’entrega. Cal revisar l’usuari/contrasenya o l’autenticació del servidor.
+
+## Calibratge del dipòsit instal·lat — 5 de novembre de 2026
+
+- Dimensions aproximades: 1100 × 800 × 1600 mm; distància sensor-ple 140 mm i sensor-fons estimada 1740 mm.
+- Capacitat geomètrica 1408 L, però estimació de volum escalada a la capacitat nominal de 1000 L. Reserva de 150 L.
+- 70 proves correctes, incloent punts 100/75/50/25/0%, rang geomètric, compatibilitat amb calibratges anteriors i coherència API/Prometheus/ntfy.
+- Ruff, sintaxi JavaScript, actionlint, renderitzat Kustomize i comprovació del diff correctes.

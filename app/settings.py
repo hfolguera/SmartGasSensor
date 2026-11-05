@@ -23,9 +23,9 @@ class Tank(BaseModel):
     @model_validator(mode="after")
     def validate_calibration(self):
         geometry = (self.length_mm, self.width_mm, self.height_mm, self.sensor_to_bottom_mm)
-        endpoints = (self.full_distance_mm, self.empty_distance_mm, self.nominal_capacity_liters)
+        endpoints = (self.full_distance_mm, self.empty_distance_mm)
         if any(value is not None for value in endpoints):
-            if not all(value is not None for value in endpoints) or any(value is not None for value in geometry):
+            if not all(value is not None for value in endpoints) or self.nominal_capacity_liters is None or any(value is not None for value in geometry):
                 raise ValueError("El calibratge de dos punts requereix els dos extrems i capacitat nominal, sense geometria")
             if self.empty_distance_mm <= self.full_distance_mm:
                 raise ValueError("La distància de buit ha de superar la de ple")
