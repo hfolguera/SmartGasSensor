@@ -124,7 +124,7 @@ Si s’omet `nominal_capacity_liters`, s’utilitza el volum geomètric rectangu
 
 Si l'alçada queda fora de `[0, height_mm]`, no es força a zero/ple: es marca error de calibratge. Les lectures originals es conserven i els càlculs es refan en consultar: canviar dimensions permet revisar l'històric. Reinicia l'aplicació després de canviar la configuració local. A Kubernetes edita `k8s/tanks.json` a `main`: el canvi del ConfigMap genera una nova versió i recrea el Pod.
 
-`received_at` és l'hora UTC de recepció al servidor, no una hora de mesura enviada pel sensor. La web la mostra en hora local. Els missatges acumulats al broker durant una caiguda poden correspondre a mesures anteriors; sense un `measured_at` fiable del firmware no se'n pot saber l'antiguitat física exacta. El timeout de dades s'aplica a la recepció. Amb `STALE_AFTER_SECONDS=3600`, es marquen antigues després d'una hora sense cap nova mostra. Els duplicats no refresquen aquesta hora.
+`received_at` és l'hora UTC de recepció al servidor, no una hora de mesura enviada pel sensor. La web la mostra en hora local. Els missatges acumulats al broker durant una caiguda poden correspondre a mesures anteriors; sense un `measured_at` fiable del firmware no se'n pot saber l'antiguitat física exacta. El timeout de dades s'aplica a la recepció. Amb `STALE_AFTER_SECONDS=10800`, es marquen antigues després de tres hores sense cap nova mostra; això dona marge a les lectures horàries i als petits retards de connexió. Els duplicats no refresquen aquesta hora.
 
 Retenció per defecte: 730 dies. Neteja com a màxim una vegada per hora quan entren dades; conserva sempre l'última mostra de cada dispositiu. Els registres antics fora de retenció no són un arxiu indefinit.
 

@@ -62,7 +62,7 @@ class Settings:
     mqtt_tls: bool = False
     mqtt_ca_file: str = ""
     tank_config_path: str = "config/tanks.json"
-    stale_after_seconds: int = 3600
+    stale_after_seconds: int = 10800
     retention_days: int = 730
     api_token: str = ""
     ntfy_enabled: bool = False
@@ -88,7 +88,7 @@ class Settings:
             mqtt_tls=flag("MQTT_TLS"),
             mqtt_ca_file=os.getenv("MQTT_CA_FILE", ""),
             tank_config_path=os.getenv("TANK_CONFIG_PATH", "config/tanks.json"),
-            stale_after_seconds=int(os.getenv("STALE_AFTER_SECONDS", "3600")),
+            stale_after_seconds=int(os.getenv("STALE_AFTER_SECONDS", "10800")),
             retention_days=int(os.getenv("RETENTION_DAYS", "730")),
             api_token=os.getenv("API_TOKEN", ""),
             ntfy_enabled=flag("NTFY_ENABLED"),

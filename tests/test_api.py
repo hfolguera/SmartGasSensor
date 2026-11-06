@@ -37,7 +37,7 @@ def test_volume_and_api_contract(settings, sample):
 def test_stale_and_error_keep_last_valid(settings, sample, sample_dict):
     with TestClient(create_app(settings)) as client:
         store = client.app.state.store
-        store.insert(sample, "home/gas/telemetry", time.time() - 4000)
+        store.insert(sample, "home/gas/telemetry", time.time() - settings.stale_after_seconds - 60)
         assert client.get("/api/v1/devices").json()["devices"][0]["state"] == "stale"
         sample_dict.update(sample_id="error-2", distance_mm=None, measurement_status="unstable")
         store.insert(Telemetry.model_validate(sample_dict), "home/gas/telemetry")
@@ -123,7 +123,7 @@ def test_prototype_two_point_calibration(settings, sample_dict, distance, percen
 
 def test_prometheus_metrics_export_real_values_and_freshness(settings, sample):
     with TestClient(create_app(settings)) as client:
-        client.app.state.store.insert(sample, 'topic', time.time() - 4000)
+        client.app.state.store.insert(sample, 'topic', time.time() - settings.stale_after_seconds - 60)
         response = client.get('/metrics')
         assert response.status_code == 200
         assert response.headers['content-type'] == 'text/plain; version=0.0.4; charset=utf-8'
@@ -158,3 +158,16 @@ def test_prometheus_endpoints_require_configured_api_token(settings):
 def test_prometheus_label_escaping():
     from app.metrics import escape
     assert escape('a"b\\c\nd') == 'a\\"b\\\\c\\nd'
+
+
+@pytest.mark.parametrize('age_seconds,stale', [(3605, False), (7205, False), (10860, True)])
+def test_hourly_readings_remain_fresh_for_three_hours(settings, sample, age_seconds, stale):
+    assert settings.stale_after_seconds == 10800
+    with TestClient(create_app(settings)) as client:
+        client.app.state.store.insert(sample, 'topic', time.time() - age_seconds)
+        assert client.get('/api/v1/status').json()['stale_after_seconds'] == 10800
+        device = client.get('/api/v1/devices/NodeMCU_ESP32/latest').json()
+        assert device['stale'] is stale
+        assert device['state'] == ('stale' if stale else 'ok')
+        metric = f'smartgas_device_stale{{device_id="NodeMCU_ESP32"}} {int(stale)}\n'
+        assert metric in client.get('/metrics').text

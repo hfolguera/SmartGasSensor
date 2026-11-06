@@ -17,7 +17,7 @@ configMapGenerator:
       - MQTT_TLS=false
       - DB_PATH=/data/smartgassensor.db
       - TANK_CONFIG_PATH=/config/tanks.json
-      - STALE_AFTER_SECONDS=3600
+      - STALE_AFTER_SECONDS=10800
       - RETENTION_DAYS=730
       - NTFY_ENABLED=true
       - NTFY_SERVER_URL=https://ntfy.calfolguera.freemyip.com
