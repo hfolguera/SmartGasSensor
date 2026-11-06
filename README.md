@@ -179,7 +179,7 @@ Exemple de configuració de scrape dins del clúster (Service HTTP al port 80):
 scrape_configs:
   - job_name: smartgassensor
     metrics_path: /metrics
-    scrape_interval: 30s
+    scrape_interval: 15m
     static_configs:
       - targets: [smartgassensor.smartgassensor.svc.cluster.local:80]
     # Si API_TOKEN està configurat:
@@ -187,6 +187,18 @@ scrape_configs:
     #   type: Bearer
     #   credentials_file: /etc/prometheus/secrets/smartgassensor-api-token
 ```
+
+Amb una lectura del sensor cada hora, el scrape de 15 minuts permet recollir el nou valor amb un retard addicional de fins a 15 minuts i comprovar periòdicament que l’aplicació respon. L’interval de scrape no modifica el firmware ni la freqüència de mesura MQTT.
+
+Prometheus utilitza per defecte un lookback de 5 minuts. Amb aquest scrape de 15 minuts, una consulta instantània directa pot quedar sense valor entre scrapes. Per mostrar l’últim valor recollit a Grafana pots utilitzar:
+
+```promql
+last_over_time(smartgas_device_volume_liters{device_id="NodeMCU_ESP32"}[30m])
+```
+
+Aquesta consulta pot conservar un volum anterior si després hi ha errors del sensor: comprova també `last_over_time(smartgas_device_measurement_valid[30m])` i `last_over_time(smartgas_device_stale[30m])`. El primer ha de ser 1 i el segon 0 per presentar-lo com un nivell vàlid i recent. La finestra de 30 minuts es refereix a la recollida de Prometheus; l’antiguitat de la mesura del sensor s’obté de `smartgas_device_age_seconds`.
+
+L’exemple de target anterior és per a un Prometheus dins del clúster. Si és extern, conserva l’URL accessible que tinguis configurada i modifica només `scrape_interval` al job `smartgassensor`, sense canviar l’interval global ni els altres jobs. Després valida i recarrega la configuració de Prometheus. [Comportament del lookback](https://prometheus.io/docs/prometheus/latest/querying/basics/#staleness).
 
 ## Notificacions ntfy i autonomia de combustible
 
