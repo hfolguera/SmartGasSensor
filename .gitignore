@@ -18,3 +18,11 @@ k8s/**/secret.yaml
 coverage.xml
 htmlcov/
 backups/
+
+# Firmware Arduino: credencials locals i binaris compilats.
+firmware/**/secrets.h
+firmware/**/build/
+firmware/**/*.bin
+firmware/**/*.elf
+firmware/**/*.hex
+firmware/**/*.map

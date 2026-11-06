@@ -11,3 +11,6 @@ secrets
 tests
 k8s
 docs
+
+# El firmware i les seves credencials no formen part de la imatge web.
+firmware

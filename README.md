@@ -9,6 +9,8 @@ ESP8266 → Mosquitto → SmartGasSensor (MQTT + FastAPI) → SQLite/PVC
                                   └→ Prometheus
 ```
 
+El firmware Arduino és a [`firmware/`](firmware/README.md), amb credencials locals separades del codi publicable.
+
 ## Què inclou
 
 - Dashboard en català, adaptable a mòbil, amb gràfic i últimes lectures.
