@@ -215,6 +215,10 @@ L’aplicació avisa quan una **nova lectura real i vàlida** travessa cap avall
 
 També s’envia un avís de prioritat alta (`4`) quan passen **més de 24 hores sense una lectura MQTT real nova**, amb enllaç a la web. El control s’executa en segon pla encara que no arribin missatges. Només s’avisa una vegada per interrupció; una nova lectura reactiva el control i cancel·la l’avís pendent si encara no s’ha entregat. Un error del sensor (`no_echo`, etc.) compta com a recepció; els duplicats, JSON rebutjats i simulacions no reinicien el termini. El rellotge i l’estat persisteixen als reinicis. Sense historial, es compta des del primer inici de la supervisió. Amb `MQTT_ENABLED=false` o `NTFY_ENABLED=false` no es generen aquests avisos. La supervisió cobreix el flux MQTT global; no és una alarma individual per cada sensor.
 
+També es controla **cada sensor** per avisar amb prioritat alta (`4`) després de **més de 24 hores sense mesures correctes**, encara que continuïn arribant errors per MQTT. Només una lectura real amb estat `ok`, distància present i distància dins dels límits del calibratge actual i nivell calculable reinicia aquest termini. Els duplicats i les simulacions no el reinicien. L’estat persisteix a SQLite; s’envia un avís per incidència i una mesura correcta rearma el control i cancel·la els avisos pendents. En actualitzar, s’utilitza l’última mesura correcta de l’historial; si no n’hi ha, la primera recepció real o l’inici de la supervisió. Sense configuració del dipòsit no es considera que una mesura sigui utilitzable. Aquest avís és independent del de silenci MQTT i pot coincidir-hi.
+
+L’API `/api/v1/status` inclou `valid_measurement_monitors`. Prometheus exposa `smartgas_device_last_valid_timestamp_seconds` (absent fins a la primera mesura correcta), `smartgas_device_without_valid_data_seconds` i `smartgas_device_no_valid_data_alert_active`, amb l’etiqueta `device_id`.
+
 Configuració local a `.env` i de Kubernetes al ConfigMap:
 
 ```dotenv
@@ -308,7 +312,3 @@ Per enviar una mostra simulada, el script `scripts/publish_sample.py` llegeix le
 - [GitHub Actions: publicar imatges](https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images)
 - [GHCR: permisos i visibilitat](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility)
 - [Kubernetes: registres privats](https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/)
-
-També es controla **cada sensor** per avisar amb prioritat alta (`4`) després de **més de 24 hores sense mesures correctes**, encara que continuïn arribant errors per MQTT. Només una lectura real amb estat `ok`, distància present i nivell calculable amb el calibratge actual reinicia aquest termini. Els duplicats i les simulacions no el reinicien. L’estat persisteix a SQLite; s’envia un avís per incidència i una mesura correcta rearma el control i cancel·la els avisos pendents. En actualitzar, s’utilitza l’última mesura correcta de l’historial; si no n’hi ha, la primera recepció real o l’inici de la supervisió. Sense configuració del dipòsit no es considera que una mesura sigui utilitzable. Aquest avís és independent del de silenci MQTT i pot coincidir-hi.
-
-L’API `/api/v1/status` inclou `valid_measurement_monitors`. Prometheus exposa `smartgas_device_last_valid_timestamp_seconds` (absent fins a la primera mesura correcta), `smartgas_device_without_valid_data_seconds` i `smartgas_device_no_valid_data_alert_active`, amb l’etiqueta `device_id`.
