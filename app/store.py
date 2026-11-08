@@ -5,16 +5,18 @@ import threading
 import time
 from pathlib import Path
 
+from app.calibration import calibrated_values
 from app.models import Telemetry
 
 
 class Store:
-    def __init__(self, path: str, retention_days: int = 730, notification_policy=None):
+    def __init__(self, path: str, retention_days: int = 730, notification_policy=None, tanks=None):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
         self.retention_days = retention_days
         self.last_cleanup = 0.0
         self.notification_policy = notification_policy
+        self.tanks = tanks if tanks is not None else getattr(notification_policy, "tanks", {})
         self.db = sqlite3.connect(path, check_same_thread=False, timeout=10)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
@@ -47,13 +49,85 @@ class Store:
             id INTEGER PRIMARY KEY CHECK(id=1), reference_at REAL NOT NULL,
             last_received_at REAL, alerted INTEGER NOT NULL DEFAULT 0
           );
-          PRAGMA user_version=3;
+          CREATE TABLE IF NOT EXISTS valid_measurement_monitor (
+            device_id TEXT PRIMARY KEY, calibration_key TEXT NOT NULL,
+            reference_at REAL NOT NULL, last_valid_at REAL, alerted INTEGER NOT NULL DEFAULT 0
+          );
+          PRAGMA user_version=4;
         """)
 
         with self.db:
             self.db.execute("""INSERT OR IGNORE INTO mqtt_monitor(id,reference_at,last_received_at)
                 SELECT 1,COALESCE(MAX(received_at),?),MAX(received_at) FROM readings WHERE simulated=0""",
                 (time.time(),))
+
+        # Backfill each device from real history, validating against the current calibration.
+        with self.db:
+            devices = set(self.tanks) | {r[0] for r in self.db.execute(
+                "SELECT DISTINCT device_id FROM readings WHERE simulated=0")}
+            for device in devices:
+                key = self._calibration_key(device)
+                old = self.db.execute("SELECT calibration_key FROM valid_measurement_monitor WHERE device_id=?",
+                                      (device,)).fetchone()
+                if old is not None and old['calibration_key'] == key:
+                    continue
+                first = self.db.execute("SELECT MIN(received_at) FROM readings WHERE device_id=? AND simulated=0",
+                                        (device,)).fetchone()[0]
+                last_valid = None
+                for row in self.db.execute("SELECT payload,received_at FROM readings WHERE device_id=? AND simulated=0 AND status='ok' ORDER BY received_at DESC,id DESC", (device,)):
+                    if self._correct(Telemetry.model_validate_json(row['payload'])):
+                        last_valid = row['received_at']
+                        break
+                reference = last_valid if last_valid is not None else (first if first is not None else time.time())
+                self.db.execute("INSERT OR REPLACE INTO valid_measurement_monitor VALUES(?,?,?,?,0)",
+                                (device, key, reference, last_valid))
+                self.db.execute("UPDATE notification_outbox SET status='cancelled' WHERE device_id=? AND threshold_percent=-2 AND status='pending'", (device,))
+
+    def _calibration_key(self, device):
+        tank = self.tanks.get(device)
+        return hashlib.sha256(tank.model_dump_json().encode()).hexdigest() if tank else 'unconfigured'
+
+    def _correct(self, sample):
+        if sample.simulated or sample.measurement_status != 'ok' or sample.distance_mm is None:
+            return False
+        tank = self.tanks.get(sample.device_id)
+        if tank is None:
+            return False
+        values = calibrated_values(tank, sample.distance_mm)
+        return values['fill_percent'] is not None and not values['calibration_clamped']
+
+    def valid_measurement_monitors(self):
+        with self.lock:
+            return [dict(row) for row in self.db.execute("SELECT * FROM valid_measurement_monitor ORDER BY device_id")]
+
+    def check_valid_measurements(self, settings, now=None):
+        """One persistent alert per device, rearmed only by a usable real measurement."""
+        if not settings.ntfy_enabled or not settings.mqtt_enabled:
+            return False
+        now = time.time() if now is None else now
+        queued = False
+        with self.lock, self.db:
+            for monitor in self.valid_measurement_monitors():
+                if monitor['alerted'] or now - monitor['reference_at'] <= 86400:
+                    continue
+                device = monitor['device_id']
+                elapsed = (now - monitor['reference_at']) / 3600
+                payload = {
+                    'topic': settings.ntfy_topic, 'title': 'Sensor sense mesures correctes durant més de 24 hores',
+                    'message': (f"{device}: fa {elapsed:.1f} hores sense una mesura correcta i utilitzable. "
+                                "Els missatges amb errors no reinicien aquest termini. "
+                                "Comprova la bateria, el sensor, les connexions i el calibratge."
+                                f"\nVeure l'evolució: {settings.public_web_url}"),
+                    'priority': 4, 'tags': ['warning', 'oil_drum'], 'click': settings.public_web_url,
+                    'actions': [{'action': 'view', 'label': 'Veure evolució', 'url': settings.public_web_url}]}
+                event = hashlib.sha256(f"no-valid:{device}:{monitor['calibration_key']}:{monitor['reference_at']}".encode()).hexdigest()
+                self.db.execute("""INSERT INTO notification_outbox
+                    (event_id,device_id,threshold_percent,payload,created_at,next_attempt_at)
+                    VALUES(?,?,-2,?,?,?) ON CONFLICT(event_id) DO NOTHING""",
+                    (event, device, json.dumps(payload, ensure_ascii=False), now, now))
+                self.db.execute("UPDATE valid_measurement_monitor SET alerted=1 WHERE device_id=?", (device,))
+                queued = True
+        return queued
 
     def insert(self, sample: Telemetry, topic: str, received_at: float | None = None) -> bool:
         now = time.time() if received_at is None else received_at
@@ -69,6 +143,12 @@ class Store:
                 self.db.execute("UPDATE mqtt_monitor SET reference_at=?,last_received_at=?,alerted=0 WHERE id=1",
                                 (now, now))
                 self.db.execute("UPDATE notification_outbox SET status='cancelled' WHERE threshold_percent=-1 AND status='pending'")
+            if inserted and not sample.simulated:
+                self.db.execute("INSERT OR IGNORE INTO valid_measurement_monitor VALUES(?,?,?,?,0)",
+                                (sample.device_id, self._calibration_key(sample.device_id), now, None))
+                if self._correct(sample):
+                    self.db.execute("UPDATE valid_measurement_monitor SET reference_at=?,last_valid_at=?,alerted=0 WHERE device_id=?", (now, now, sample.device_id))
+                    self.db.execute("UPDATE notification_outbox SET status='cancelled' WHERE device_id=? AND threshold_percent=-2 AND status='pending'", (sample.device_id,))
             if inserted and self.notification_policy is not None:
                 self.notification_policy.plan(self.db, sample, now)
             # Conserva sempre l'última lectura de cada dispositiu, encara que sigui antiga.
@@ -171,8 +251,8 @@ class Store:
     def notifications(self, limit=20):
         with self.lock:
             rows = self.db.execute("SELECT * FROM notification_outbox ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
-            return [{"id": row['id'], "device_id": row['device_id'], "threshold_percent": None if row['threshold_percent'] == -1 else row['threshold_percent'],
-                     "type": "mqtt_silence" if row['threshold_percent'] == -1 else "level",
+            return [{"id": row['id'], "device_id": row['device_id'], "threshold_percent": None if row['threshold_percent'] < 0 else row['threshold_percent'],
+                     "type": {-1: "mqtt_silence", -2: "no_valid_data"}.get(row['threshold_percent'], "level"),
                      "created_at": row['created_at'], "sent_at": row['sent_at'], "status": row['status'],
                      "attempts": row['attempts'], "last_error": row['last_error'],
                      **json.loads(row['payload'])} for row in rows]

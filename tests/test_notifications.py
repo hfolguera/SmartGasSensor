@@ -220,7 +220,7 @@ def test_v1_database_upgrades_without_losing_readings(tmp_path, sample):
     old.close()
     upgraded = Store(path)
     assert upgraded.latest_all()[0]['sample_id'] == sample.sample_id
-    assert upgraded.db.execute('PRAGMA user_version').fetchone()[0] == 3
+    assert upgraded.db.execute('PRAGMA user_version').fetchone()[0] == 4
     assert upgraded.notification_summary()['pending'] == 0
     upgraded.close()
 
@@ -320,4 +320,71 @@ def test_silence_worker_runs_without_incoming_messages(tmp_path, monkeypatch):
     sender.start()
     assert queued.wait(2)
     sender.stop()
+    store.close()
+
+
+def test_valid_data_monitor_errors_recovery_restart(notification_setup):
+    settings, tanks, store, reading = notification_setup
+    reading(60)
+    start = store.valid_measurement_monitors()[0]['last_valid_at']
+    assert not store.check_valid_measurements(settings, start + 86400)
+    reading(60, measurement_status='no_echo', distance_mm=None)
+    reading(60, distance_mm=10000)  # status ok but unusable calibration
+    reading(60, simulated=True)
+    assert store.valid_measurement_monitors()[0]['reference_at'] == start
+    assert store.check_valid_measurements(settings, start + 86401)
+    assert not store.check_valid_measurements(settings, start + 172800)
+    event = store.notifications()[0]
+    assert event['type'] == 'no_valid_data'
+    assert event['threshold_percent'] is None
+    assert event['priority'] == 4
+    assert event['click'] == settings.public_web_url
+    path = store.db.execute('PRAGMA database_list').fetchone()['file']
+    reopened = Store(path, tanks=tanks)
+    assert not reopened.check_valid_measurements(settings, start + 172800)
+    reopened.close()
+    reading(60)
+    assert store.notifications()[0]['status'] == 'cancelled'
+    assert store.valid_measurement_monitors()[0]['alerted'] == 0
+
+
+def test_valid_data_monitor_migrates_history_and_ignores_duplicates(tmp_path, sample_dict):
+    path = str(tmp_path / 'upgrade.db')
+    tank = Tank(name='Tank', full_distance_mm=50, empty_distance_mm=250, nominal_capacity_liters=1000)
+    store = Store(path)
+    good = Telemetry.model_validate({**sample_dict, 'sample_id': 'good', 'distance_mm': 150})
+    store.insert(good, 'test', received_at=time.time() - 90000)
+    store.insert(Telemetry.model_validate({**sample_dict, 'sample_id': 'bad', 'measurement_status': 'no_echo', 'distance_mm': None}), 'test')
+    store.db.execute('DROP TABLE valid_measurement_monitor')
+    store.close()
+    store = Store(path, tanks={good.device_id: tank})
+    settings = Settings(ntfy_enabled=True)
+    assert not store.insert(good, 'test')
+    assert store.check_valid_measurements(settings)
+    assert store.valid_measurement_monitors()[0]['last_valid_at'] < time.time() - 86400
+    store.close()
+
+
+def test_valid_data_monitor_no_history_and_disabled(tmp_path):
+    settings = Settings(ntfy_enabled=True)
+    tank = Tank(name='Tank', full_distance_mm=50, empty_distance_mm=250, nominal_capacity_liters=1000)
+    store = Store(str(tmp_path / 'empty.db'), tanks={'sensor': tank})
+    start = store.valid_measurement_monitors()[0]['reference_at']
+    assert not store.check_valid_measurements(replace(settings, mqtt_enabled=False), start + 90000)
+    assert not store.check_valid_measurements(replace(settings, ntfy_enabled=False), start + 90000)
+    assert store.check_valid_measurements(settings, start + 90000)
+    store.close()
+
+
+def test_valid_data_monitors_are_per_device(tmp_path, sample_dict):
+    tank = Tank(name='Tank', full_distance_mm=50, empty_distance_mm=250, nominal_capacity_liters=1000)
+    store = Store(str(tmp_path / 'devices.db'), tanks={'one': tank, 'two': tank})
+    settings = Settings(ntfy_enabled=True)
+    now = time.time()
+    for device in ('one', 'two'):
+        store.insert(Telemetry.model_validate({**sample_dict, 'device_id': device, 'sample_id': device, 'distance_mm': 150}), 'test', now - 90000)
+    store.insert(Telemetry.model_validate({**sample_dict, 'device_id': 'two', 'sample_id': 'fresh', 'distance_mm': 150}), 'test', now)
+    assert store.check_valid_measurements(settings, now)
+    events = [e for e in store.notifications() if e['type'] == 'no_valid_data']
+    assert [e['device_id'] for e in events] == ['one']
     store.close()

@@ -37,7 +37,7 @@ class NotificationPolicy:
             # Primera lectura o canvi de calibratge: referència, sense avisos retroactius.
             armed = {threshold for threshold in THRESHOLDS if percent > threshold}
             if row is not None:
-                db.execute("UPDATE notification_outbox SET status='cancelled' WHERE device_id=? AND status='pending'",
+                db.execute("UPDATE notification_outbox SET status='cancelled' WHERE device_id=? AND threshold_percent>=0 AND status='pending'",
                            (sample.device_id,))
         else:
             try:
@@ -118,6 +118,7 @@ class NotificationSender:
         while not self.stopped.is_set():
             try:
                 self.store.check_mqtt_silence(self.settings)
+                self.store.check_valid_measurements(self.settings)
                 if not self.deliver_one():
                     self.stopped.wait(1)
             except sqlite3.Error:

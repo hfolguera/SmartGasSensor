@@ -76,7 +76,7 @@ function renderAutonomy(device, display, fallback) {
 function renderNotifications(data) {
   $('notification-status').textContent=!data.enabled?'Desactivats':data.last_error?'Reintent pendent':data.pending?'Enviament pendent':'Actius';
   $('notification-status').className='badge'+(data.last_error?' error':data.pending?' warning':'');
-  $('notification-summary').textContent='ntfy / '+data.topic+' · '+data.sent+' enviats · '+data.pending+' pendents. '+(data.last_error?'Últim error: '+data.last_error+'. ':'')+'Prioritat alta al 20% i urgent al 10%. Avís després de 24 h sense lectures MQTT noves. Obrir un avís porta a la web final.';
+  $('notification-summary').textContent='ntfy / '+data.topic+' · '+data.sent+' enviats · '+data.pending+' pendents. '+(data.last_error?'Últim error: '+data.last_error+'. ':'')+'Prioritat alta al 20% i urgent al 10%. Avisos després de 24 h sense lectures MQTT noves o sense mesures correctes. Obrir un avís porta a la web final.';
   $('notification-events').replaceChildren();
   for(const event of data.events.slice(0,5)){
     const row=document.createElement('div'),content=document.createElement('div'),title=document.createElement('strong'),info=document.createElement('p'),badge=document.createElement('span');

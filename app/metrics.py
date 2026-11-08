@@ -29,6 +29,11 @@ def render_metrics(store, mqtt, tanks, settings):
     add('smartgas_mqtt_last_received_timestamp_seconds', monitor['last_received_at'], 'Last new real telemetry receipt, Unix seconds; absent until first receipt.')
     add('smartgas_mqtt_silence_seconds', max(0, now - monitor['reference_at']), 'Seconds since new real telemetry, or initial monitoring start.')
     add('smartgas_mqtt_silence_alert_active', monitor['alerted'], 'A silence alert was queued for the current interruption (1 active).')
+    for device_monitor in store.valid_measurement_monitors():
+        labels = {'device_id': device_monitor['device_id']}
+        add('smartgas_device_last_valid_timestamp_seconds', device_monitor['last_valid_at'], 'Last correct calibrated real measurement, Unix seconds.', labels)
+        add('smartgas_device_without_valid_data_seconds', max(0, now - device_monitor['reference_at']), 'Seconds without correct calibrated real data, or since monitoring began.', labels)
+        add('smartgas_device_no_valid_data_alert_active', device_monitor['alerted'], 'An alert was queued for this period without correct data (1 active).', labels)
     add('smartgas_notifications_enabled', settings.ntfy_enabled, 'Notification delivery enabled (1 enabled).')
     notification_counts = store.notification_summary()
     for state in ('pending', 'sent', 'cancelled'):

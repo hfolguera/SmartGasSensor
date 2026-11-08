@@ -31,7 +31,7 @@ def create_app(settings: Settings | None = None):
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
         app.state.tanks = load_tanks(settings.tank_config_path)
         policy = NotificationPolicy(settings, app.state.tanks) if settings.ntfy_enabled else None
-        app.state.store = Store(settings.db_path, settings.retention_days, policy)
+        app.state.store = Store(settings.db_path, settings.retention_days, policy, app.state.tanks)
         app.state.notifications = NotificationSender(settings, app.state.store)
         app.state.notifications.start()
         app.state.mqtt = MqttService(settings, app.state.store)
@@ -106,6 +106,7 @@ def create_app(settings: Settings | None = None):
         mqtt["last_message_at"] = iso(mqtt["last_message_at"])
         return {"server_time": iso(time.time()), "mqtt": mqtt,
                 "stale_after_seconds": settings.stale_after_seconds, "retention_days": settings.retention_days,
+                "valid_measurement_monitors": app.state.store.valid_measurement_monitors(),
                 "mqtt_monitor": {**app.state.store.mqtt_monitor(), "silence_threshold_seconds": 86400},
                 "notifications": {"enabled": settings.ntfy_enabled, **app.state.store.notification_summary()}}
 
