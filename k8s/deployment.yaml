@@ -17,7 +17,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: smartgassensor
-        app.kubernetes.io/version: "0460d88"
+        app.kubernetes.io/version: "31a3a1e"
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
