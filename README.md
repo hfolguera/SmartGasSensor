@@ -126,7 +126,7 @@ Si l'alçada queda fora de `[0, height_mm]`, no es força a zero/ple: es marca e
 
 `received_at` és l'hora UTC de recepció al servidor, no una hora de mesura enviada pel sensor. La web la mostra en hora local. Els missatges acumulats al broker durant una caiguda poden correspondre a mesures anteriors; sense un `measured_at` fiable del firmware no se'n pot saber l'antiguitat física exacta. El timeout de dades s'aplica a la recepció. Amb `STALE_AFTER_SECONDS=10800`, es marquen antigues després de tres hores sense cap nova mostra; això dona marge a les lectures horàries i als petits retards de connexió. Els duplicats no refresquen aquesta hora.
 
-Retenció per defecte: 730 dies. Neteja com a màxim una vegada per hora quan entren dades; conserva sempre l'última mostra de cada dispositiu. Els registres antics fora de retenció no són un arxiu indefinit.
+Retenció per defecte: **3.650 dies (aproximadament 10 anys)**. Neteja com a màxim una vegada per hora quan entren dades; conserva sempre l'última mostra de cada dispositiu. Els registres antics fora de retenció no són un arxiu indefinit.
 
 ## API
 
@@ -305,6 +305,31 @@ kubectl kustomize k8s > /tmp/smartgas.yaml
 Les versions directes són a `requirements.in`/`requirements-dev.in`; els `.txt` fixen també dependències transitives. Per actualitzar-les, utilitza `pip-tools` amb Python 3.12 i torna a executar les proves.
 
 Per enviar una mostra simulada, el script `scripts/publish_sample.py` llegeix les credencials de les variables d'entorn i publica per defecte a `home/gas/demo/telemetry`, amb `device_id=demo-sensor` i `simulated=true`. Per veure-la cal configurar la subscripció de l'aplicació a aquest topic o utilitzar explícitament el topic real amb `--topic home/gas/telemetry`. El dispositiu simulat sempre es distingeix del real.
+
+## Històric i consum de gasoil
+
+La web permet seleccionar un any o dates inicial/final (incloses), agrupar per **dia, mes o any** i comparar en litres amb el mateix període de l’any anterior. Per a períodes en curs, l’any anterior es limita a la mateixa data i hora local; els períodes futurs o sense dades es mostren amb un guió, mai com a zero. La cobertura i l’estat (complet, parcial, poques dades o sense dades) acompanyen cada resultat. Un període es considera complet amb almenys un 90% de cobertura i una data final ja passada. No es projecten consums per als buits d’històric.
+
+```http
+GET /api/v1/devices/NodeMCU_ESP32/consumption?start=2026-01-01&end=2027-01-01&group_by=month&timezone=Europe%2FMadrid
+```
+
+A l’API, `end` és **exclusiu**. `group_by` admet `day`, `month` i `year`; l’interval màxim és de 3.660 dies. La resposta inclou les agrupacions (`buckets`), totals observats, cobertura, recàrregues estimades, primera/última mostra disponible, mètode i `previous_year`. Es pot ometre la comparació amb `compare_previous_year=false`. Els dies respecten el calendari local, inclosos canvis d’hora. El 29 de febrer es compara amb el 28 de febrer quan l’any anterior no és de traspàs.
+
+El **consum és una estimació del descens de nivell**, no un comptador de cabal ni una mesura de facturació:
+
+- Només s’utilitzen lectures reals `ok`, amb distància dins dels límits del calibratge. Les simulacions i errors queden exclosos.
+- Primer s’obté una mediana per hora (en blocs UTC, sense confondre hores repetides pels canvis d’hora), perquè una ràfega de lectures cada minut no pesi més que les lectures horàries normals. Després, una mediana de 3 punts horaris elimina pics aïllats. El punt horari més recent necessita el següent per quedar confirmat. Això també evita que una manipulació breu del sensor es compti com una recàrrega seguida d’un gran consum.
+- Les baixades s’acumulen fins a `CONSUMPTION_NOISE_LITERS=5`. Això evita sumar cada petita oscil·lació com a consum. El canvi pendent pot aparèixer quan es confirma una nova baixada: els resultats recents són provisionals.
+- Els ascensos d’almenys `CONSUMPTION_REFILL_LITERS=50` es consideren **recàrregues estimades**, separades del consum. Recàrregues més petites poden no detectar-se; l’estimació de litres repostats també depèn del consum entre mesures.
+- No es connecten mesures separades per més de `CONSUMPTION_MAX_GAP_SECONDS=10800` ni calibratges diferents. La cobertura només compta intervals confirmats i connectats.
+- Cada baixada es reparteix proporcionalment entre les dates que travessa, assumint consum uniforme entre les mesures que la delimiten. La distribució diària pot diferir del moment real del consum.
+
+Per evitar comptar les proves del prototip com a consum, per defecte el càlcul comença **en activar aquesta funció per cada sensor**, amb un instant persistent a SQLite. Les lectures anteriors es conserven. Si coneixes quan es va instal·lar i validar el sensor, configura `CONSUMPTION_SINCE` amb una data ISO i zona horària (p. ex. `2026-11-09T00:00:00+01:00`) per reutilitzar només l’històric fiable a partir d’aquell instant. Aquesta opció s’aplica a tots els sensors. El desplegament actual l’estableix al **6 de novembre de 2026 a les 00:00, Europe/Madrid**, inici indicat per a les lectures fiables del dipòsit. L’API retorna `reliable_since` i el recompte de lectures antigues excloses; cap filtre de dates a la web permet saltar-se aquest límit de fiabilitat.
+
+El volum i la identificació del calibratge es desen juntament amb cada lectura. Canviar les mides en el futur no recalcula els litres històrics de consum. En migrar l’historial existent, com que abans només es guardava la distància, es calcula amb el calibratge disponible en activar aquesta funció i es marca `backfilled_current`; no es poden recuperar calibratges antics desconeguts. La taula `reading_calibration` s’elimina en cascada amb les lectures quan l’aplicació aplica la retenció. Les consultes de nivell de l’API existent continuen utilitzant el calibratge actual.
+
+Amb una lectura per hora, un sensor genera unes 8.760 lectures/any: SQLite és suficient per aquest volum i el desplegament d’una sola rèplica. Considerarem PostgreSQL si calen diverses rèpliques amb escriptura concurrent o més serveis accedint directament a les dades. La retenció no substitueix les **còpies de seguretat fora del PVC**: cal conservar còpies consistents de SQLite amb la seva API de backup. Copiar només el `.db` mentre està actiu en mode WAL pot deixar dades fora de la còpia.
 
 ## Fonts principals
 

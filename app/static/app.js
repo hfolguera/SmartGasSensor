@@ -107,6 +107,53 @@ function renderChart(rows) {
   box.append(svg);
 }
 function renderTable(rows){$('readings').replaceChildren();for(const row of rows.slice(-12).reverse()){const tr=document.createElement('tr');const values=[date(row.received_at),number(row.distance_mm)+' mm',row.volume_liters==null?'—':number(row.volume_liters)+' L',(row.simulated?'SIMULAT · ':'')+(measurements[row.measurement_status]||row.measurement_status),number(row.spread_mm)+' mm',row.wifi_rssi_dbm==null?'—':number(row.wifi_rssi_dbm,0)+' dBm'];for(const value of values){const td=document.createElement('td');td.textContent=value;tr.append(td);}$('readings').append(tr);}}
+let consumptionRequest=0, consumptionLoadedAt=0, consumptionDevice='';
+function shiftYear(value){
+  const [y,m,d]=value.split('-').map(Number),lastDay=new Date(Date.UTC(y-1,m,0)).getUTCDate();
+  return `${y-1}-${String(m).padStart(2,'0')}-${String(Math.min(d,lastDay)).padStart(2,'0')}`;
+}
+function dayAfter(value){const d=new Date(value+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+1);return d.toISOString().slice(0,10);}
+function renderConsumption(data){
+  const comparison=data.previous_year, previous=new Map((comparison?.buckets||[]).map(b=>[b.start,b]));
+  $('consumption-summary').textContent=data.consumption_liters==null?'Encara no hi ha prou mesures vàlides per calcular el consum d’aquest període.':
+    'Consum observat: '+number(data.consumption_liters)+' L · Any anterior: '+(comparison?.consumption_liters==null?'sense dades':number(comparison.consumption_liters)+' L')+' · Cobertura del període: '+number(data.coverage_percent)+'%. Els totals només inclouen intervals observats.';
+  $('consumption-method').textContent='Històric fiable des de '+new Date(data.reliable_since).toLocaleString('ca-ES')+'. Hora Europe/Madrid. Mediana horària i filtre de 3 mesures; baixades acumulades de '+number(data.method.noise_liters)+' L i recàrregues a partir de '+number(data.method.refill_threshold_liters)+' L. No es calcula consum sobre buits de més de '+number(data.method.max_gap_seconds/3600)+' h ni entre calibratges diferents. El consum s’aproxima repartint cada baixada entre lectures. Les dades recents són provisionals.'+(data.backfilled_readings?' Les lectures anteriors a aquesta funció s’han convertit amb el calibratge disponible en activar-la.':'');
+  const status={complete:'Complet',partial:'Parcial',no_data:'Sense dades',insufficient_data:'Poques dades'};
+  $('consumption-rows').replaceChildren();
+  for(const bucket of data.buckets){
+    const old=previous.get(shiftYear(bucket.start)),tr=document.createElement('tr');
+    const label=data.group_by==='month'?bucket.start.slice(0,7):data.group_by==='year'?bucket.start.slice(0,4):bucket.start;
+    for(const value of [label,bucket.consumption_liters==null?'—':number(bucket.consumption_liters)+' L',old?.consumption_liters==null?'—':number(old.consumption_liters)+' L',bucket.refill_liters==null?'—':number(bucket.refill_liters)+' L',number(bucket.coverage_percent)+'% / '+number(old?.coverage_percent)+'%',status[bucket.status]]){const td=document.createElement('td');td.textContent=value;tr.append(td);}
+    $('consumption-rows').append(tr);
+  }
+  const box=$('consumption-chart');box.replaceChildren();
+  if(!data.buckets.some(b=>b.consumption_liters!=null)&&!comparison?.buckets.some(b=>b.consumption_liters!=null)){box.textContent='El gràfic apareixerà quan hi hagi dades suficients.';return;}
+  const width=Math.max(350,box.clientWidth),height=240,left=55,bottom=40,top=18,chartWidth=width-left-20;
+  let max=10;for(const bucket of data.buckets){max=Math.max(max,bucket.consumption_liters||0,previous.get(shiftYear(bucket.start))?.consumption_liters||0);}
+  max*=1.1;const y=v=>top+(height-top-bottom)*(1-v/max),step=chartWidth/data.buckets.length;
+  const svg=svgNode('svg',{viewBox:`0 0 ${width} ${height}`,role:'img','aria-label':'Consum en litres i comparació amb l’any anterior'});
+  for(let i=0;i<4;i++){const v=max*i/3;svg.append(svgNode('line',{x1:left,y1:y(v),x2:width-20,y2:y(v),stroke:'#e8ede4'}),svgNode('text',{x:left-8,y:y(v)+4,'text-anchor':'end'},number(v,0)+' L'));}
+  data.buckets.forEach((bucket,i)=>{
+    const old=previous.get(shiftYear(bucket.start));
+    [bucket,old].forEach((entry,j)=>{if(entry?.consumption_liters==null)return;const rect=svgNode('rect',{x:left+i*step+step*(j?.52:.12),y:y(entry.consumption_liters),width:Math.max(.3,step*.33),height:Math.max(1,y(0)-y(entry.consumption_liters)),fill:j?'#ce8d49':'#608a48',opacity:entry.status==='complete'?1:.6});rect.append(svgNode('title',{},entry.start+' · '+number(entry.consumption_liters)+' L · '+status[entry.status]));svg.append(rect);});
+    if(i%Math.max(1,Math.ceil(data.buckets.length/12))===0){const label=data.group_by==='day'?bucket.start.slice(5):data.group_by==='month'?bucket.start.slice(0,7):bucket.start.slice(0,4);svg.append(svgNode('text',{x:left+(i+.5)*step,y:height-12,'text-anchor':'middle'},label));}
+  });box.append(svg);
+}
+async function loadConsumption(force=false){
+  if(!selected||(!force&&consumptionDevice===selected&&Date.now()-consumptionLoadedAt<300000))return;
+  if(!$('consumption-start').value||!$('consumption-end').value||$('consumption-end').value<$('consumption-start').value){$('consumption-summary').textContent='Indica una data final igual o posterior a la inicial.';return;}
+  const request=++consumptionRequest,device=selected;
+  const params=new URLSearchParams({start:$('consumption-start').value,end:dayAfter($('consumption-end').value),group_by:$('consumption-group').value});
+  $('consumption-summary').textContent='Carregant el consum…';
+  try{const data=await api('devices/'+encodeURIComponent(device)+'/consumption?'+params);if(request!==consumptionRequest||device!==selected)return;renderConsumption(data);consumptionDevice=device;consumptionLoadedAt=Date.now();}
+  catch(error){if(request!==consumptionRequest)return;$('consumption-summary').textContent=error.message;$('consumption-chart').replaceChildren();$('consumption-rows').replaceChildren();}
+}
+const consumptionYear=new Date().getFullYear();
+$('consumption-year').value=consumptionYear;
+function selectConsumptionYear(){const year=Number($('consumption-year').value);if(!Number.isInteger(year)||year<1971||year>2100)return;$('consumption-start').value=year+'-01-01';$('consumption-end').value=year+'-12-31';}
+selectConsumptionYear();
+$('consumption-year').addEventListener('change',()=>{selectConsumptionYear();loadConsumption(true);});
+$('consumption-filters').addEventListener('submit',event=>{event.preventDefault();loadConsumption(true);});
 async function update(){
   if(updating)return;updating=true;$('refresh').disabled=true;
   try{
@@ -119,7 +166,7 @@ async function update(){
     notice(status.mqtt.storage_errors_total?'Error d’emmagatzematge. Cal revisar els logs i reiniciar l’aplicació.':!connected&&status.mqtt.enabled?'No hi ha connexió activa de subscripció al broker. Les dades desades continuen disponibles.':'');
     const ids=devices.map(d=>d.device_id);if(!ids.includes(selected))selected=ids[0]||'';
     $('device').replaceChildren();for(const device of devices){const option=document.createElement('option');option.value=device.device_id;option.textContent=device.name;option.selected=device.device_id===selected;$('device').append(option);}
-    if(selected){renderDevice(devices.find(d=>d.device_id===selected));const history=await api('devices/'+encodeURIComponent(selected)+'/history?hours='+hours+'&limit=500');renderChart(history.readings);renderTable(history.readings);}
+    if(selected){renderDevice(devices.find(d=>d.device_id===selected));loadConsumption();const history=await api('devices/'+encodeURIComponent(selected)+'/history?hours='+hours+'&limit=500');renderChart(history.readings);renderTable(history.readings);}
     $('updated').textContent='Actualitzat a les '+new Date().toLocaleTimeString('ca-ES')+' · cada 15 s';
   }catch(error){notice(error.message);$('broker-dot').className='dot error';$('broker-status').textContent='Sense dades actualitzades';}
   finally{updating=false;$('refresh').disabled=false;}

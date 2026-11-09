@@ -1,15 +1,19 @@
+import calendar
 import hmac
 import logging
 import time
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.calibration import calibrated_values
+from app.consumption import estimate
 from app.metrics import render_metrics
 from app.mqtt_service import MqttService
 from app.notifications import NotificationPolicy, NotificationSender
@@ -140,13 +144,45 @@ def create_app(settings: Settings | None = None):
         raise HTTPException(404, "Dispositiu desconegut")
 
     @app.get("/api/v1/devices/{device_id}/history", dependencies=[Depends(authorize)])
-    def history(device_id: str, hours: int = Query(default=24, ge=1, le=17520),
+    def history(device_id: str, hours: int = Query(default=24, ge=1, le=87600),
                 limit: int = Query(default=500, ge=1, le=5000), before: float | None = Query(default=None, gt=0)):
         if device_id not in {row["device_id"] for row in app.state.store.latest_all()}:
             raise HTTPException(404, "Dispositiu desconegut")
         readings = app.state.store.history(device_id, time.time() - hours * 3600, limit, before)
         return {"readings": [decorate(row) for row in readings], "limit": limit,
                 "next_before": readings[0]["received_at"] if len(readings) == limit else None}
+
+    @app.get("/api/v1/devices/{device_id}/consumption", dependencies=[Depends(authorize)])
+    def consumption(device_id: str, start: date, end: date,
+                    group_by: Literal['day', 'month', 'year'] = 'month', timezone: str = 'Europe/Madrid',
+                    compare_previous_year: bool = True):
+        if start.year < 1971 or end.year > 2101 or end <= start or (end - start).days > 3660:
+            raise HTTPException(422, "Indica un interval vàlid de fins a 10 anys; la data final és exclusiva")
+        try:
+            ZoneInfo(timezone)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise HTTPException(422, "Zona horària desconeguda") from None
+        if device_id not in app.state.tanks:
+            raise HTTPException(404, "Dipòsit desconegut o sense calibratge")
+        all_rows = app.state.store.consumption_readings(device_id)
+        since = (datetime.fromisoformat(settings.consumption_since).timestamp() if settings.consumption_since
+                 else app.state.store.consumption_epoch(device_id))
+        rows = [row for row in all_rows if row['received_at'] >= since]
+        now = time.time()
+        result = {'device_id': device_id, **estimate(rows, start, end, group_by, timezone, settings, now)}
+        result['reliable_since'] = iso(since)
+        result['historical_readings_excluded'] = len(all_rows) - len(rows)
+        if compare_previous_year:
+            def previous_year(value):
+                return value.replace(year=value.year - 1,
+                                     day=min(value.day, calendar.monthrange(value.year - 1, value.month)[1]))
+            # If this period is still running, cap the previous year at the same
+            # local calendar date/time, rather than comparing against a full year.
+            local_now = datetime.fromtimestamp(now, ZoneInfo(timezone))
+            comparison_now = previous_year(local_now).timestamp() if end > local_now.date() else now
+            result['previous_year'] = estimate(rows, previous_year(start), previous_year(end),
+                                              group_by, timezone, settings, comparison_now)
+        return result
 
     @app.get("/api/v1/notifications", dependencies=[Depends(authorize)])
     def notifications(limit: int = Query(default=20, ge=1, le=100)):

@@ -22,6 +22,21 @@
       <div class="stats"><article class="stat-card"><span class="eyebrow">DISTÀNCIA A LA SUPERFÍCIE</span><div id="distance" class="stat-value">—</div><span id="distance-note" class="muted">Mesurada pel sensor</span></article><article class="stat-card"><span class="eyebrow">ÚLTIMA RECEPCIÓ</span><div id="last-seen" class="stat-value compact">—</div><span id="last-date" class="muted">—</span></article><article class="stat-card"><span class="eyebrow">QUALITAT DE LA LECTURA</span><div id="quality" class="stat-value compact">—</div><span id="samples" class="muted">—</span></article><article class="stat-card"><span class="eyebrow">SENYAL WI-FI</span><div id="wifi" class="stat-value">—</div><span id="wifi-note" class="muted">—</span></article></div>
     </div>
     <article class="history-card"><div class="card-top"><div><p class="eyebrow">EVOLUCIÓ</p><h2 id="chart-title">Distància al llarg del temps</h2></div><div class="range-buttons" role="group" aria-label="Període del gràfic"><button data-hours="6">6 h</button><button data-hours="24" class="active">24 h</button><button data-hours="168">7 dies</button></div></div><div id="chart" class="chart" aria-label="Històric de lectures"></div><div class="chart-footer"><span id="chart-summary">—</span><span>Hora local · recepció al servidor</span></div></article>
+    <article class="history-card consumption-card" aria-labelledby="consumption-title">
+      <div class="card-top"><div><p class="eyebrow">HISTÒRIC DE CONSUM</p><h2 id="consumption-title">Consum de gasoil</h2></div><span class="badge">Estimació en litres</span></div>
+      <form id="consumption-filters" class="consumption-filters">
+        <label>Any de referència<input id="consumption-year" type="number" min="1971" max="2100" required></label>
+        <label>Des de<input id="consumption-start" type="date" required></label>
+        <label>Fins a (inclòs)<input id="consumption-end" type="date" required></label>
+        <label>Agrupa per<select id="consumption-group"><option value="day">Dia</option><option value="month" selected>Mes</option><option value="year">Any</option></select></label>
+        <button class="button" type="submit">Consulta</button>
+      </form>
+      <p id="consumption-summary" class="muted" role="status">Carregant l’històric…</p>
+      <p class="small">Verd: període seleccionat · Taronja: mateix període de l’any anterior. Els intervals sense dades no compten com a consum zero.</p>
+      <div id="consumption-chart" class="consumption-chart" aria-label="Comparació de consum"></div>
+      <div class="table-scroll consumption-table"><table><thead><tr><th>Període</th><th>Consum</th><th>Any anterior</th><th>Recàrregues estimades</th><th>Cobertura actual / anterior</th><th>Estat</th></tr></thead><tbody id="consumption-rows"></tbody></table></div>
+      <p id="consumption-method" class="small"></p>
+    </article>
     <article class="table-card"><div class="card-top"><h2>Últimes lectures</h2><span class="small">Les lectures amb error no es converteixen en zero</span></div><div class="table-scroll"><table><thead><tr><th>Recepció</th><th>Distància</th><th>Volum</th><th>Estat</th><th>Dispersió</th><th>Wi-Fi</th></tr></thead><tbody id="readings"></tbody></table></div></article>
     <article class="table-card notifications-card"><div class="card-top"><div><p class="eyebrow">NOTIFICACIONS</p><h2>Avisos de nivell</h2></div><span id="notification-status" class="badge">—</span></div><p id="notification-summary" class="muted">Avisos cada 10% de baixada; prioritat alta al 20% i urgent al 10%.</p><div id="notification-events" class="notification-events"></div></article>
     <details class="diagnostics"><summary>Diagnòstic del dispositiu i accés a les dades</summary><dl id="diagnostics"></dl><p>API del dispositiu: <code id="api-link"></code></p><p class="small">Bateria: només es mostra si el firmware envia una mesura real. Cap percentatge estimat.</p></details>

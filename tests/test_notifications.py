@@ -220,7 +220,7 @@ def test_v1_database_upgrades_without_losing_readings(tmp_path, sample):
     old.close()
     upgraded = Store(path)
     assert upgraded.latest_all()[0]['sample_id'] == sample.sample_id
-    assert upgraded.db.execute('PRAGMA user_version').fetchone()[0] == 4
+    assert upgraded.db.execute('PRAGMA user_version').fetchone()[0] == 5
     assert upgraded.notification_summary()['pending'] == 0
     upgraded.close()
 

@@ -10,7 +10,7 @@ from app.models import Telemetry
 
 
 class Store:
-    def __init__(self, path: str, retention_days: int = 730, notification_policy=None, tanks=None):
+    def __init__(self, path: str, retention_days: int = 3650, notification_policy=None, tanks=None):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
         self.retention_days = retention_days
@@ -19,6 +19,7 @@ class Store:
         self.tanks = tanks if tanks is not None else getattr(notification_policy, "tanks", {})
         self.db = sqlite3.connect(path, check_same_thread=False, timeout=10)
         self.db.row_factory = sqlite3.Row
+        self.db.execute("PRAGMA foreign_keys=ON")
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=FULL")
         self.db.executescript("""
@@ -53,7 +54,14 @@ class Store:
             device_id TEXT PRIMARY KEY, calibration_key TEXT NOT NULL,
             reference_at REAL NOT NULL, last_valid_at REAL, alerted INTEGER NOT NULL DEFAULT 0
           );
-          PRAGMA user_version=4;
+          CREATE TABLE IF NOT EXISTS reading_calibration (
+            reading_id INTEGER PRIMARY KEY REFERENCES readings(id) ON DELETE CASCADE,
+            volume_liters REAL, calibration_key TEXT NOT NULL, source TEXT NOT NULL
+          );
+          CREATE TABLE IF NOT EXISTS consumption_epochs (
+            device_id TEXT PRIMARY KEY, started_at REAL NOT NULL
+          );
+          PRAGMA user_version=5;
         """)
 
         with self.db:
@@ -61,11 +69,19 @@ class Store:
                 SELECT 1,COALESCE(MAX(received_at),?),MAX(received_at) FROM readings WHERE simulated=0""",
                 (time.time(),))
 
+        with self.db:
+            rows = self.db.execute("""SELECT r.id,r.payload FROM readings r
+                LEFT JOIN reading_calibration c ON c.reading_id=r.id
+                WHERE c.reading_id IS NULL AND r.simulated=0""").fetchall()
+            for row in rows:
+                self._snapshot(row['id'], Telemetry.model_validate_json(row['payload']), 'backfilled_current')
+
         # Backfill each device from real history, validating against the current calibration.
         with self.db:
             devices = set(self.tanks) | {r[0] for r in self.db.execute(
                 "SELECT DISTINCT device_id FROM readings WHERE simulated=0")}
             for device in devices:
+                self.db.execute("INSERT OR IGNORE INTO consumption_epochs VALUES(?,?)", (device, time.time()))
                 key = self._calibration_key(device)
                 old = self.db.execute("SELECT calibration_key FROM valid_measurement_monitor WHERE device_id=?",
                                       (device,)).fetchone()
@@ -82,6 +98,29 @@ class Store:
                 self.db.execute("INSERT OR REPLACE INTO valid_measurement_monitor VALUES(?,?,?,?,0)",
                                 (device, key, reference, last_valid))
                 self.db.execute("UPDATE notification_outbox SET status='cancelled' WHERE device_id=? AND threshold_percent=-2 AND status='pending'", (device,))
+
+    def _snapshot(self, reading_id, sample, source):
+        if sample.simulated or sample.device_id not in self.tanks:
+            return
+        tank = self.tanks[sample.device_id]
+        values = calibrated_values(tank, sample.distance_mm)
+        volume = values['volume_liters'] if self._correct(sample) else None
+        self.db.execute("INSERT OR IGNORE INTO reading_calibration VALUES(?,?,?,?)",
+                        (reading_id, volume, self._calibration_key(sample.device_id), source))
+
+    def consumption_epoch(self, device_id):
+        with self.lock:
+            row = self.db.execute("SELECT started_at FROM consumption_epochs WHERE device_id=?", (device_id,)).fetchone()
+            return row['started_at'] if row else time.time()
+
+    def consumption_readings(self, device_id):
+        # Read a narrow immutable snapshot; calculations run outside the ingestion lock.
+        with self.lock:
+            return [dict(row) for row in self.db.execute("""SELECT r.id,r.received_at,c.volume_liters,
+                c.calibration_key,c.source FROM readings r
+                JOIN reading_calibration c ON c.reading_id=r.id
+                WHERE r.device_id=? AND r.simulated=0 AND r.status='ok' AND c.volume_liters IS NOT NULL
+                ORDER BY r.received_at,r.id""", (device_id,))]
 
     def _calibration_key(self, device):
         tank = self.tanks.get(device)
@@ -139,7 +178,10 @@ class Store:
                  sample.measurement_status, sample.distance_mm, int(sample.simulated)),
             )
             inserted = cursor.rowcount == 1
+            if inserted:
+                self._snapshot(cursor.lastrowid, sample, "ingested")
             if inserted and not sample.simulated:
+                self.db.execute("INSERT OR IGNORE INTO consumption_epochs VALUES(?,?)", (sample.device_id, now))
                 self.db.execute("UPDATE mqtt_monitor SET reference_at=?,last_received_at=?,alerted=0 WHERE id=1",
                                 (now, now))
                 self.db.execute("UPDATE notification_outbox SET status='cancelled' WHERE threshold_percent=-1 AND status='pending'")

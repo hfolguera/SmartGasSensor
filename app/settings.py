@@ -1,7 +1,9 @@
 import json
+import math
 import os
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -63,7 +65,11 @@ class Settings:
     mqtt_ca_file: str = ""
     tank_config_path: str = "config/tanks.json"
     stale_after_seconds: int = 10800
-    retention_days: int = 730
+    retention_days: int = 3650
+    consumption_since: str = ""
+    consumption_noise_liters: float = 5.0
+    consumption_refill_liters: float = 50.0
+    consumption_max_gap_seconds: int = 10800
     api_token: str = ""
     ntfy_enabled: bool = False
     ntfy_server_url: str = "https://ntfy.calfolguera.freemyip.com"
@@ -89,7 +95,11 @@ class Settings:
             mqtt_ca_file=os.getenv("MQTT_CA_FILE", ""),
             tank_config_path=os.getenv("TANK_CONFIG_PATH", "config/tanks.json"),
             stale_after_seconds=int(os.getenv("STALE_AFTER_SECONDS", "10800")),
-            retention_days=int(os.getenv("RETENTION_DAYS", "730")),
+            retention_days=int(os.getenv("RETENTION_DAYS", "3650")),
+            consumption_since=os.getenv("CONSUMPTION_SINCE", ""),
+            consumption_noise_liters=float(os.getenv("CONSUMPTION_NOISE_LITERS", "5")),
+            consumption_refill_liters=float(os.getenv("CONSUMPTION_REFILL_LITERS", "50")),
+            consumption_max_gap_seconds=int(os.getenv("CONSUMPTION_MAX_GAP_SECONDS", "10800")),
             api_token=os.getenv("API_TOKEN", ""),
             ntfy_enabled=flag("NTFY_ENABLED"),
             ntfy_server_url=os.getenv("NTFY_SERVER_URL", "https://ntfy.calfolguera.freemyip.com"),
@@ -104,6 +114,17 @@ class Settings:
             raise ValueError("MQTT_PORT fora de rang")
         if settings.stale_after_seconds < 60 or settings.retention_days < 1:
             raise ValueError("Intervals de configuració invàlids")
+        if (not all(math.isfinite(value) for value in (settings.consumption_noise_liters, settings.consumption_refill_liters))
+                or not 0 < settings.consumption_noise_liters < settings.consumption_refill_liters
+                or settings.consumption_max_gap_seconds < 60):
+            raise ValueError("Llindars de consum invàlids")
+        if settings.consumption_since:
+            try:
+                since = datetime.fromisoformat(settings.consumption_since)
+                if since.utcoffset() is None:
+                    raise ValueError("Falta zona horària")
+            except ValueError:
+                raise ValueError("CONSUMPTION_SINCE requereix una data ISO amb zona horària") from None
         if not settings.mqtt_client_id or not settings.mqtt_topic:
             raise ValueError("Cal MQTT_CLIENT_ID i MQTT_TOPIC")
         for url in (settings.ntfy_server_url, settings.public_web_url):
