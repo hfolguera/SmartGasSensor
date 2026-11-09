@@ -136,7 +136,7 @@ function renderConsumption(data){
   data.buckets.forEach((bucket,i)=>{
     const old=previous.get(shiftYear(bucket.start));
     [bucket,old].forEach((entry,j)=>{if(entry?.consumption_liters==null)return;const rect=svgNode('rect',{x:left+i*step+step*(j?.52:.12),y:y(entry.consumption_liters),width:Math.max(.3,step*.33),height:Math.max(1,y(0)-y(entry.consumption_liters)),fill:j?'#ce8d49':'#608a48',opacity:entry.status==='complete'?1:.6});rect.append(svgNode('title',{},entry.start+' · '+number(entry.consumption_liters)+' L · '+status[entry.status]));svg.append(rect);});
-    if(i%Math.max(1,Math.ceil(data.buckets.length/12))===0){const label=data.group_by==='day'?bucket.start.slice(5):data.group_by==='month'?bucket.start.slice(0,7):bucket.start.slice(0,4);svg.append(svgNode('text',{x:left+(i+.5)*step,y:height-12,'text-anchor':'middle'},label));}
+    if(i%Math.max(1,Math.ceil(data.buckets.length/Math.max(2,Math.floor(chartWidth/75))))===0){const label=data.group_by==='day'?bucket.start.slice(5):data.group_by==='month'?bucket.start.slice(0,7):bucket.start.slice(0,4);svg.append(svgNode('text',{x:left+(i+.5)*step,y:height-12,'text-anchor':'middle'},label));}
   });box.append(svg);
 }
 async function loadConsumption(force=false){
