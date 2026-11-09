@@ -148,10 +148,14 @@ async function loadConsumption(force=false){
   try{const data=await api('devices/'+encodeURIComponent(device)+'/consumption?'+params);if(request!==consumptionRequest||device!==selected)return;renderConsumption(data);consumptionDevice=device;consumptionLoadedAt=Date.now();}
   catch(error){if(request!==consumptionRequest)return;$('consumption-summary').textContent=error.message;$('consumption-chart').replaceChildren();$('consumption-rows').replaceChildren();}
 }
-const consumptionYear=new Date().getFullYear();
+const consumptionDate=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Madrid',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()).map(part=>[part.type,part.value]));
+const consumptionYear=Number(consumptionDate.year);
 $('consumption-year').value=consumptionYear;
 function selectConsumptionYear(){const year=Number($('consumption-year').value);if(!Number.isInteger(year)||year<1971||year>2100)return;$('consumption-start').value=year+'-01-01';$('consumption-end').value=year+'-12-31';}
 selectConsumptionYear();
+$('consumption-start').value=(consumptionYear-1)+'-01-01';
+$('consumption-end').value=consumptionDate.year+'-'+consumptionDate.month+'-'+consumptionDate.day;
+$('consumption-group').value='month';
 $('consumption-year').addEventListener('change',()=>{selectConsumptionYear();loadConsumption(true);});
 $('consumption-filters').addEventListener('submit',event=>{event.preventDefault();loadConsumption(true);});
 async function update(){
