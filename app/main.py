@@ -1,4 +1,5 @@
 import calendar
+import hashlib
 import hmac
 import logging
 import time
@@ -9,7 +10,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.calibration import calibrated_values
@@ -66,6 +67,8 @@ def create_app(settings: Settings | None = None):
         )
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
+        elif request.url.path == "/" or request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache, must-revalidate"
         return response
 
     def decorate(row):
@@ -82,7 +85,11 @@ def create_app(settings: Settings | None = None):
 
     @app.get("/", include_in_schema=False)
     def home():
-        return FileResponse(STATIC / "index.html")
+        page = (STATIC / "index.html").read_text()
+        for asset in ('app.js', 'styles.css'):
+            version = hashlib.sha256((STATIC / asset).read_bytes()).hexdigest()[:12]
+            page = page.replace(f'/static/{asset}', f'/static/{asset}?v={version}')
+        return HTMLResponse(page)
 
     @app.get("/health/live", tags=["health"])
     def live(response: Response):

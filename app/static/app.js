@@ -153,7 +153,9 @@ const consumptionYear=Number(consumptionDate.year);
 $('consumption-year').value=consumptionYear;
 function selectConsumptionYear(){const year=Number($('consumption-year').value);if(!Number.isInteger(year)||year<1971||year>2100)return;$('consumption-start').value=year+'-01-01';$('consumption-end').value=year+'-12-31';}
 selectConsumptionYear();
-$('consumption-start').value=(consumptionYear-1)+'-01-01';
+const consumptionPreviousYear=consumptionYear-1;
+const consumptionPreviousDay=Math.min(Number(consumptionDate.day),new Date(Date.UTC(consumptionPreviousYear,Number(consumptionDate.month),0)).getUTCDate());
+$('consumption-start').value=consumptionPreviousYear+'-'+consumptionDate.month+'-'+String(consumptionPreviousDay).padStart(2,'0');
 $('consumption-end').value=consumptionDate.year+'-'+consumptionDate.month+'-'+consumptionDate.day;
 $('consumption-group').value='month';
 $('consumption-year').addEventListener('change',()=>{selectConsumptionYear();loadConsumption(true);});

@@ -309,7 +309,7 @@ Per enviar una mostra simulada, el script `scripts/publish_sample.py` llegeix le
 
 ## Històric i consum de gasoil
 
-Per defecte, la web mostra el consum **per mesos, des de l’1 de gener de l’any anterior fins avui**, segons Europe/Madrid. Permet seleccionar un any o dates inicial/final (incloses), agrupar per **dia, mes o any** i comparar en litres amb el mateix període de l’any anterior. Per a períodes en curs, l’any anterior es limita a la mateixa data i hora local; els períodes futurs o sense dades es mostren amb un guió, mai com a zero. La cobertura i l’estat (complet, parcial, poques dades o sense dades) acompanyen cada resultat. Un període es considera complet amb almenys un 90% de cobertura i una data final ja passada. No es projecten consums per als buits d’històric.
+Per defecte, la web mostra el consum **per mesos, durant els darrers 12 mesos fins avui**, segons Europe/Madrid. Permet seleccionar un any o dates inicial/final (incloses), agrupar per **dia, mes o any** i comparar en litres amb el mateix període de l’any anterior. Per a períodes en curs, l’any anterior es limita a la mateixa data i hora local; els períodes futurs o sense dades es mostren amb un guió, mai com a zero. La cobertura i l’estat (complet, parcial, poques dades o sense dades) acompanyen cada resultat. Un període es considera complet amb almenys un 90% de cobertura i una data final ja passada. No es projecten consums per als buits d’històric.
 
 ```http
 GET /api/v1/devices/NodeMCU_ESP32/consumption?start=2026-01-01&end=2027-01-01&group_by=month&timezone=Europe%2FMadrid
