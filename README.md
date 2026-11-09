@@ -122,7 +122,7 @@ Les dimensions donen **1.408 L geomètrics**, que no coincideixen amb els 1.000 
 
 Si s’omet `nominal_capacity_liters`, s’utilitza el volum geomètric rectangular. També es manté el calibratge antic de dos punts (`full_distance_mm`, `empty_distance_mm` i capacitat nominal, sense dimensions) per compatibilitat, però no és el mode del dipòsit instal·lat. La web mostra els extrems configurats, sense distàncies fixes del prototip.
 
-Si l'alçada queda fora de `[0, height_mm]`, no es força a zero/ple: es marca error de calibratge. Les lectures originals es conserven i els càlculs es refan en consultar: canviar dimensions permet revisar l'històric. Reinicia l'aplicació després de canviar la configuració local. A Kubernetes edita `k8s/tanks.json` a `main`: el canvi del ConfigMap genera una nova versió i recrea el Pod.
+Si l'alçada queda fora de `[0, height_mm]`, no es força a zero/ple: es marca error de calibratge. Les lectures originals es conserven i els càlculs de nivell es refan en consultar: canviar dimensions permet revisar aquest històric. El càlcul de consum conserva el volum i el calibratge desats en cada lectura. Reinicia l'aplicació després de canviar la configuració local. A Kubernetes edita `k8s/tanks.json` a `main`: el canvi del ConfigMap genera una nova versió i recrea el Pod.
 
 `received_at` és l'hora UTC de recepció al servidor, no una hora de mesura enviada pel sensor. La web la mostra en hora local. Els missatges acumulats al broker durant una caiguda poden correspondre a mesures anteriors; sense un `measured_at` fiable del firmware no se'n pot saber l'antiguitat física exacta. El timeout de dades s'aplica a la recepció. Amb `STALE_AFTER_SECONDS=10800`, es marquen antigues després de tres hores sense cap nova mostra; això dona marge a les lectures horàries i als petits retards de connexió. Els duplicats no refresquen aquesta hora.
 
@@ -136,6 +136,7 @@ Retenció per defecte: **3.650 dies (aproximadament 10 anys)**. Neteja com a mà
 | `GET /api/v1/devices` | Últim estat de cada dispositiu i `last_valid` |
 | `GET /api/v1/devices/{device_id}/latest` | Estat d'un dispositiu |
 | `GET /api/v1/devices/{device_id}/history?hours=24&limit=500` | Històric, ordre cronològic, màxim 5.000 mostres per consulta |
+| `GET /api/v1/devices/{device_id}/consumption?start=2026-01-01&end=2027-01-01&group_by=month` | Consum estimat, cobertura, recàrregues i comparació anual |
 | `GET /api/v1/notifications` | Avisos enviats/pendents, llindars, intents i estat ntfy |
 | `GET /api/v1/metrics` | Mètriques en format Prometheus |
 | `GET /openapi.json` | Esquema OpenAPI |

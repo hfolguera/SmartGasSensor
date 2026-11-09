@@ -18,7 +18,11 @@ configMapGenerator:
       - DB_PATH=/data/smartgassensor.db
       - TANK_CONFIG_PATH=/config/tanks.json
       - STALE_AFTER_SECONDS=10800
-      - RETENTION_DAYS=730
+      - RETENTION_DAYS=3650
+      - CONSUMPTION_SINCE=2026-11-06T00:00:00+01:00
+      - CONSUMPTION_NOISE_LITERS=5
+      - CONSUMPTION_REFILL_LITERS=50
+      - CONSUMPTION_MAX_GAP_SECONDS=10800
       - NTFY_ENABLED=true
       - NTFY_SERVER_URL=https://ntfy.calfolguera.freemyip.com
       - NTFY_TOPIC=home-notifications
